@@ -1,0 +1,34 @@
+# Train / validation / test split manifest.
+# Single source of truth for boundaries used by 02_build_splits.ipynb.
+# See data/splits/explanation.md for the full strategy.
+
+sample_start: 2004-01-01
+
+splits:
+  daily:
+    train: [2004-01-01, 2021-12-31]
+    val:   [2022-01-01, 2023-12-31]
+    test:  [2024-01-01, 2026-04-29]
+  weekly:
+    train: [2004-01-02, 2018-12-31]
+    val:   [2019-01-01, 2019-12-31]
+    test:  [2020-01-01, 2026-04-29]
+
+targets: [SPY, OIL, GOLD]
+exog_pool: [SPY, OIL, GOLD, VIX, DXY]
+embargo_periods: 1
+
+rfp:
+  regimes:
+    GFC:        [2007-07-01, 2009-06-30]
+    OIL_CRASH:  [2014-06-01, 2016-02-29]
+    COVID:      [2020-02-01, 2020-12-31]
+    ENERGY_22:  [2022-01-01, 2023-06-30]
+    CALM_17_19: [2017-01-01, 2019-12-31]
+  daily:
+    n_per_regime: 5
+    window_len:   60
+  weekly:
+    n_per_regime: 3
+    window_len:   26
+  random_seed: 42
