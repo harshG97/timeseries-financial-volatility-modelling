@@ -114,7 +114,7 @@ produced and a notice is printed.
 
 | Frequency | Usable regimes                                          | Target windows / regime | Window length | Actual total |
 |-----------|---------------------------------------------------------|--------------------------|----------------|---------------|
-| Daily     | GFC, OIL_CRASH, COVID, ENERGY_22, CALM_17_19 (all 5)    | 5                        | 60 trading days| 23 (COVID fits 3 non-overlapping) |
+| Daily     | GFC, OIL_CRASH, COVID, ENERGY_22, CALM_17_19 (all 5)    | 5                        | 60 trading days| 22 (COVID fits 3, ENERGY_22 fits 4) |
 | Weekly    | GFC, OIL_CRASH, CALM_17_19 (3 — COVID and ENERGY_22 are in the weekly test set) | 3 | 26 weeks       | 9 |
 
 For each window: fit on all data strictly before `forecast_start`, forecast the
@@ -148,6 +148,26 @@ If compute becomes a bottleneck (MS-GARCH and ML cells in particular), reduce
 **windows per regime** before dropping cells. Preserving the no_exog ↔
 with_exog ablation is the analytical priority.
 
+### Programmatic access via `src/rfp_generator.py`
+
+The module `src/rfp_generator.py` streams per-window train/forecast slices
+without re-implementing the slicing logic in every modeling notebook:
+
+```python
+from src.rfp_generator import RFPGenerator
+gen = RFPGenerator()                                   # defaults to data/splits/
+for w in gen.iter_windows(freq="daily", target="SPY", use_exog=True):
+    model.fit(w.X_train, w.y_train)
+    pred = model.predict(w.X_forecast)
+    score = qlike(pred, w.y_forecast)
+```
+
+For each yielded `RFPWindow` the training slice is `data[date <= fit_end]` and
+the forecast slice is `data[forecast_start <= date <= forecast_end]`, sourced
+from `train.csv ∪ val.csv` of the requested cell. Filter by `regimes=[...]`
+or `window_ids=[...]` if you only want a subset, or call
+`gen.get_window("d_GFC_1", target="OIL", use_exog=False)` for a single window.
+
 ## 6. Leakage and embargo
 
 - All exogenous variables enter with `.shift(1)` minimum (no contemporaneous
@@ -167,7 +187,7 @@ data/splits/
 ├── manifest.yaml                    # split boundaries, RFP config
 ├── explanation.md                   # this document
 ├── rfp/
-│   ├── daily_windows.csv            # 23 rows
+│   ├── daily_windows.csv            # 22 rows
 │   └── weekly_windows.csv           # 9 rows
 ├── daily/
 │   ├── no_exog/
