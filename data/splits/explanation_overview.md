@@ -12,10 +12,10 @@ We don't have just one dataset; we evaluate models across 12 isolated scenarios 
 
 This is the primary workflow for building and tuning the models.
 
-* **Train:** The sandbox. Use this to fit base models and calculate initial selection metrics (like AIC/BIC for econometric models) or train the raw weights for machine learning architectures.
-* **Validation:** The tuning ground. Use this strictly out-of-sample block to run hyperparameter grid searches, select feature subsets, and finalize the model architecture.
-* **The "Train + Val" Refit:** *Critical step.* Once a model is finalized on the Validation set, you must refit it on the combined Train and Validation data before touching the Test set.
-* **Test:** The vault. Evaluate the final models here using Expanding Cross-Validation (ECV). The model predicts one step ahead, actual data is revealed and appended to the training set, the model steps forward, and it periodically refits (e.g., every 20 days).
+* **Train:** Use this to fit base models and calculate initial selection metrics (like AIC/BIC for econometric models) or train the raw weights for machine learning architectures.
+* **Validation:**  Use this strictly out-of-sample block to run hyperparameter grid searches, select feature subsets, and finalize the model architecture.
+* **The "Train + Val" Refit:** Once a model is finalized on the Validation set, you must refit it on the combined Train and Validation data before touching the Test set.
+* **Test:** Evaluate the final models here using Expanding Cross-Validation (ECV). The model predicts one step ahead, actual data is revealed and appended to the training set, the model steps forward, and it periodically refits (e.g., every 20 days).
 
 ---
 
