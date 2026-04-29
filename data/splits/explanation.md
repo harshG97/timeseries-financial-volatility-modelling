@@ -24,17 +24,29 @@ to ensure all five series are populated.
 We evaluate every combination of:
 
 - **Frequency**: daily, weekly
-- **Feature regime**: no exogenous variables, with exogenous variables
+- **Feature regime**: `no_exog` (target-only / endogenous) vs `with_exog`
+  (target-only + cross-asset + market)
 - **Target**: SPY, OIL, GOLD
 
 → 2 × 2 × 3 = **12 modeling cells.** Calendar boundaries are identical across
 all cells so cross-cell comparisons isolate one factor at a time
 (frequency / feature regime / asset).
 
-When a series is the target, it is excluded from its own exogenous set:
-- target = SPY  → exog = {OIL, GOLD, VIX, DXY}
-- target = OIL  → exog = {SPY, GOLD, VIX, DXY}
-- target = GOLD → exog = {SPY, OIL, VIX, DXY}
+The two feature regimes:
+
+- **`no_exog`** (target-only): the target's own log-return plus features
+  derived from it — lagged return, lagged squared return, leverage indicator,
+  and three rolling realized-volatility horizons. Suitable as input for
+  univariate GARCH / GJR-GARCH / MS-GARCH (which only consume `ret`) and as a
+  univariate-LSTM baseline.
+- **`with_exog`** (target + market): everything in `no_exog` plus cross-asset
+  return lags (the other two of {SPY, OIL, GOLD}, target excluded) and
+  external market features (DXY return, VIX level, VIX change). Used by
+  GARCH-X / MS-GARCH-X variants and the LSTM with full feature set.
+
+The `no_exog ↔ with_exog` ablation answers the question: *does cross-asset
+and market information beyond the target's own return history improve
+volatility forecasts?*
 
 ## 3. Three-stage split
 
@@ -175,26 +187,33 @@ Total: 36 split CSVs + 2 RFP CSVs + 1 manifest + 1 explanation.
 
 ### CSV schemas
 
-**No-exog cell** — `data/splits/{freq}/no_exog/{TARGET}/{stage}.csv`:
+**`no_exog` cell** — `data/splits/{freq}/no_exog/{TARGET}/{stage}.csv` — 8 columns:
 
-| column   | description                                 |
-|----------|---------------------------------------------|
-| date     | ISO date (trading day or week-ending date)  |
-| ret      | log-return of target (the y variable)       |
-| ret_lag1 | one-period-lagged log-return of target      |
+| column           | description                                              |
+|------------------|----------------------------------------------------------|
+| date             | ISO date (trading day or week-ending Friday)             |
+| ret              | log-return of target (the y variable)                    |
+| ret_lag1         | one-period-lagged log-return of target                   |
+| ret_sq_lag1      | lagged squared log-return (ARCH innovation)              |
+| neg_ret_sq_lag1  | lagged negative-return-squared (leverage indicator)      |
+| RV_5_lag1        | 5-period rolling std of returns, lagged                  |
+| RV_10_lag1       | 10-period rolling std of returns, lagged                 |
+| RV_22_lag1       | 22-period rolling std of returns, lagged                 |
 
-**With-exog cell** — `data/splits/{freq}/with_exog/{TARGET}/{stage}.csv`:
+**`with_exog` cell** — `data/splits/{freq}/with_exog/{TARGET}/{stage}.csv` — 13 columns:
 
-| column           | description                                 |
-|------------------|---------------------------------------------|
-| date             | ISO date                                    |
-| ret              | log-return of target (y)                    |
-| ret_lag1         | lagged target return                        |
-| {exog}_ret_lag1  | lagged log-returns of each exog price series|
-| vix_log_lag1     | lagged log-VIX level                        |
-| dxy_ret_lag1     | lagged DXY log-return                       |
+All `no_exog` columns above, plus:
 
-Exog columns vary by target (the target is excluded from its own exog set).
+| column            | description                                              |
+|-------------------|----------------------------------------------------------|
+| {other}_ret_lag1  | lagged log-return of each non-target asset in {SPY, OIL, GOLD} (2 columns) |
+| DXY_ret_lag1      | lagged DXY log-return                                    |
+| vix_log_lag1      | lagged log-VIX level                                     |
+| vix_log_diff_lag1 | lagged change in log-VIX                                 |
+
+Cross-asset column names depend on the target (target is excluded from its
+own exog set). For example, the SPY cell contains `OIL_ret_lag1` and
+`GOLD_ret_lag1`; the OIL cell contains `SPY_ret_lag1` and `GOLD_ret_lag1`.
 
 **RFP window file** — `data/splits/rfp/{freq}_windows.csv`:
 
@@ -206,7 +225,50 @@ Exog columns vary by target (the target is excluded from its own exog set).
 | forecast_start  | first forecast date (= fit_end + 1 + embargo)   |
 | forecast_end    | last forecast date                              |
 
-## 8. Regenerating the splits
+## 8. Feature reference
+
+Every column emitted to the split CSVs, grouped by family. All non-target
+columns end in `_lag1` to make causal lagging visually explicit; the build
+code applies `.shift(1)` after computing each feature, so no row contains
+information from its own timestamp or later.
+
+### Endogenous features (always present, derived from target's own returns)
+
+| Column              | Formula                                              | What it captures                                              | Used by      |
+|---------------------|------------------------------------------------------|---------------------------------------------------------------|--------------|
+| `ret`               | log(P_t / P_{t-1})                                   | target log-return — the **y variable**                        | all models   |
+| `ret_lag1`          | `ret.shift(1)`                                       | one-period lag of return; sign / direction signal             | LSTM, GARCH-X|
+| `ret_sq_lag1`       | `(ret²).shift(1)`                                    | ARCH innovation; strongest single predictor of σ²(t)          | LSTM, GARCH-X|
+| `neg_ret_sq_lag1`   | `((ret < 0) · ret²).shift(1)`                        | leverage / asymmetry indicator (GJR-style)                    | LSTM, GJR-X  |
+| `RV_5_lag1`         | `ret.rolling(5).std().shift(1)`                      | short-horizon realized volatility (~1 week daily, ~1 mo weekly)| LSTM (HAR)   |
+| `RV_10_lag1`        | `ret.rolling(10).std().shift(1)`                     | medium-horizon realized volatility                            | LSTM (HAR)   |
+| `RV_22_lag1`        | `ret.rolling(22).std().shift(1)`                     | long-horizon realized volatility (~1 month daily, ~5 mo weekly)| LSTM (HAR)  |
+
+### Exogenous features (added in `with_exog` cells only)
+
+| Column                | Formula                                          | What it captures                                              | Used by             |
+|-----------------------|--------------------------------------------------|---------------------------------------------------------------|---------------------|
+| `{other}_ret_lag1`    | log-return of non-target asset, lagged           | cross-asset spillover (e.g. OIL → SPY during energy shocks)   | LSTM, GARCH-X       |
+| `DXY_ret_lag1`        | DXY log-return, lagged                           | dollar strength → commodity / equity coupling                  | LSTM, GARCH-X       |
+| `vix_log_lag1`        | `log(VIX).shift(1)`                              | market's forward-looking implied vol; strong for SPY           | LSTM, GARCH-X       |
+| `vix_log_diff_lag1`   | `log(VIX).diff().shift(1)`                       | change in implied vol; vol-of-vol leading indicator            | LSTM                |
+
+### Notes
+
+- The **same numeric window sizes (5, 10, 22) are used at both frequencies**.
+  Their *calendar* meaning differs: daily ≈ week / 2 weeks / month;
+  weekly ≈ month / 2.5 months / ~5 months. This is documented but not
+  schema-bifurcated, to keep the cell layout uniform.
+- Univariate GARCH and MS-GARCH models consume only the `ret` column;
+  the additional endogenous features are ignored during fitting.
+- LSTM models that use `with_exog` should standardize features using
+  statistics computed on **training data only**, then apply the same scaler
+  to validation and test slices.
+- VIX is treated as a feature only — never a target — because it *is* the
+  market's 30-day implied-volatility forecast; using it as a target would
+  be circular.
+
+## 9. Regenerating the splits
 
 All split files are deterministic outputs of:
 
