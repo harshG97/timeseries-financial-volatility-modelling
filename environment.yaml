@@ -20,3 +20,7 @@ dependencies:
       - arch
       - rpy2
       - yfinance
+      - prophet
+      - cmdstanpy
+      - greykite
+      - orbit-ml
