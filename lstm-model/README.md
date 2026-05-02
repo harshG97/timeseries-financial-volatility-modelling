@@ -51,3 +51,49 @@ To skip plots:
 ```powershell
 python .\lstm-model\lstm_volatility.py --no-plots
 ```
+
+## RFP (Random Forecast Periods) evaluation
+
+`lstm_rfp.py` evaluates the validated LSTM blueprints on the RFP windows
+defined in `data/splits/rfp/`. For each window the model is trained from
+scratch on all data up to `fit_end` (using hyperparameters from
+`lstm_validation_results.csv`), then predicts the full forecast window
+without refitting.
+
+### Quick example — one cell, one regime
+
+```bash
+python lstm-model/lstm_rfp.py --targets SPY --freqs daily --exogs no_exog --regimes GFC --cpu
+```
+
+### Run all 12 cells across all regimes
+
+```bash
+python lstm-model/lstm_rfp.py
+```
+
+### Data-config filtering
+
+Three optional flags control which cells to evaluate. If a flag is omitted
+(or set to `all`), all values for that dimension are included:
+
+| Flag | Values | Default |
+|------|--------|---------|
+| `--targets` | `SPY,OIL,GOLD` | all |
+| `--freqs` | `daily,weekly` | all |
+| `--exogs` | `no_exog,with_exog` | all |
+
+Use `--regimes` to restrict to specific RFP regimes (e.g. `GFC,COVID`).
+
+### Outputs
+
+Written to `lstm-model/outputs/rfp/`:
+
+- `lstm_rfp_results.csv`: one row per (cell × window) with metrics and hyperparams
+- `lstm_rfp_summary.csv`: per-cell per-regime mean/median aggregates
+- `forecasts/{target}_{freq}_{exog}_{window_id}.csv`: per-day predictions
+- `plots/per_window/`: predicted vs actual volatility per window
+- `plots/regime_bars/`: mean QLIKE by regime per cell
+- `plots/ablation/`: no_exog vs with_exog grouped bars per target×freq
+- `plots/heatmap_qlike.png`: cell × regime QLIKE heatmap
+- `plots/boxplot_regime_qlike.png`: QLIKE distribution by regime

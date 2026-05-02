@@ -1,0 +1,17 @@
+name: tsa-project
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - matplotlib
+  - scikit-learn
+  - tqdm
+  - pyyaml
+  - pytorch::pytorch
+  - pip:
+      - statsmodels
+      - arch
