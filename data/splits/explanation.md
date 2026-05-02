@@ -207,20 +207,23 @@ Total: 36 split CSVs + 2 RFP CSVs + 1 manifest + 1 explanation.
 
 ### CSV schemas
 
-**`no_exog` cell** — `data/splits/{freq}/no_exog/{TARGET}/{stage}.csv` — 8 columns:
+**`no_exog` cell** — `data/splits/{freq}/no_exog/{TARGET}/{stage}.csv` — 11 columns:
 
-| column           | description                                              |
-|------------------|----------------------------------------------------------|
-| date             | ISO date (trading day or week-ending Friday)             |
-| ret              | log-return of target (the y variable)                    |
-| ret_lag1         | one-period-lagged log-return of target                   |
-| ret_sq_lag1      | lagged squared log-return (ARCH innovation)              |
-| neg_ret_sq_lag1  | lagged negative-return-squared (leverage indicator)      |
-| RV_5_lag1        | 5-period rolling std of returns, lagged                  |
-| RV_10_lag1       | 10-period rolling std of returns, lagged                 |
-| RV_22_lag1       | 22-period rolling std of returns, lagged                 |
+| column              | description                                              |
+|---------------------|----------------------------------------------------------|
+| date                | ISO date (trading day or week-ending Friday)             |
+| ret                 | log-return of target (the y variable)                    |
+| ret_lag1            | one-period-lagged log-return of target                   |
+| ret_sq_lag1         | lagged squared log-return (ARCH innovation)              |
+| neg_ret_sq_lag1     | lagged negative-return-squared (leverage indicator)      |
+| RV_5_lag1           | 5-period rolling std of returns, lagged                  |
+| RV_10_lag1          | 10-period rolling std of returns, lagged                 |
+| RV_22_lag1          | 22-period rolling std of returns, lagged                 |
+| logvol_lag1         | lagged log-volume of target                              |
+| logvol_z22_lag1     | lagged 22-period z-score of log-volume                   |
+| absret_logvol_lag1  | lagged \|return\| × log-volume (MDH interaction)          |
 
-**`with_exog` cell** — `data/splits/{freq}/with_exog/{TARGET}/{stage}.csv` — 13 columns:
+**`with_exog` cell** — `data/splits/{freq}/with_exog/{TARGET}/{stage}.csv` — 16 columns:
 
 All `no_exog` columns above, plus:
 
@@ -234,6 +237,9 @@ All `no_exog` columns above, plus:
 Cross-asset column names depend on the target (target is excluded from its
 own exog set). For example, the SPY cell contains `OIL_ret_lag1` and
 `GOLD_ret_lag1`; the OIL cell contains `SPY_ret_lag1` and `GOLD_ret_lag1`.
+Cross-asset *volume* features are intentionally not included — empirical
+evidence for own-asset volume → own-asset volatility is strong, while
+cross-asset volume effects are weaker and noisier.
 
 **RFP window file** — `data/splits/rfp/{freq}_windows.csv`:
 
@@ -252,7 +258,7 @@ columns end in `_lag1` to make causal lagging visually explicit; the build
 code applies `.shift(1)` after computing each feature, so no row contains
 information from its own timestamp or later.
 
-### Endogenous features (always present, derived from target's own returns)
+### Endogenous return-based features (always present, derived from target's own returns)
 
 | Column              | Formula                                              | What it captures                                              | Used by      |
 |---------------------|------------------------------------------------------|---------------------------------------------------------------|--------------|
@@ -263,6 +269,19 @@ information from its own timestamp or later.
 | `RV_5_lag1`         | `ret.rolling(5).std().shift(1)`                      | short-horizon realized volatility (~1 week daily, ~1 mo weekly)| LSTM (HAR)   |
 | `RV_10_lag1`        | `ret.rolling(10).std().shift(1)`                     | medium-horizon realized volatility                            | LSTM (HAR)   |
 | `RV_22_lag1`        | `ret.rolling(22).std().shift(1)`                     | long-horizon realized volatility (~1 month daily, ~5 mo weekly)| LSTM (HAR)  |
+
+### Endogenous volume-based features (always present, derived from target's own volume)
+
+Motivated by the volume–volatility link (Karpoff 1987 survey) and the Mixture
+of Distributions Hypothesis (Clark 1973; Lamoureux & Lastrapes 1990): trading
+volume is a contemporaneous proxy for information arrival and explains a
+large share of conditional heteroskedasticity.
+
+| Column                | Formula                                                                       | What it captures                                                | Used by              |
+|-----------------------|-------------------------------------------------------------------------------|-----------------------------------------------------------------|----------------------|
+| `logvol_lag1`         | `log(Volume).shift(1)` (zeros forward-filled before log)                      | lagged log trading volume — raw volume input                     | LSTM, GARCH-X        |
+| `logvol_z22_lag1`     | `((log(Volume) − rolling_mean(22)) / rolling_std(22)).shift(1)`               | volume **relative to recent norm** — detrended (handles long-run AUM growth and futures contract roll-overs) | LSTM, GARCH-X |
+| `absret_logvol_lag1`  | `(\|ret\| · log(Volume)).shift(1)`                                             | MDH interaction term — joint signal of return magnitude and trading activity | LSTM      |
 
 ### Exogenous features (added in `with_exog` cells only)
 
