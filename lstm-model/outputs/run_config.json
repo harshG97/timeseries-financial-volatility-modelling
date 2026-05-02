@@ -1,0 +1,18 @@
+{
+  "targets": "all",
+  "freqs": "all",
+  "exogs": "all",
+  "lookbacks": "10,22",
+  "hidden_sizes": "32,64",
+  "dropouts": "0.0,0.2",
+  "learning_rates": "0.001",
+  "num_layers": 1,
+  "weight_decay": 0.0,
+  "batch_size": 64,
+  "epochs": 80,
+  "patience": 10,
+  "seed": 42,
+  "cpu": false,
+  "no_plots": false,
+  "show_epoch_progress": false
+}
