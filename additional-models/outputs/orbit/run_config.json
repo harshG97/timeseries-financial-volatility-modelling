@@ -1,0 +1,11 @@
+{
+  "targets": "all",
+  "freqs": "all",
+  "exogs": "all",
+  "no_plots": false,
+  "seed": 42,
+  "estimators": "stan-map",
+  "damped_factors": "0.7,0.9",
+  "trends": "linear,loglinear",
+  "disable_regressors": false
+}

@@ -1,0 +1,11 @@
+{
+  "targets": "all",
+  "freqs": "all",
+  "exogs": "all",
+  "no_plots": false,
+  "seed": 42,
+  "seasonality_modes": "additive,multiplicative",
+  "changepoint_priors": "0.05,0.5",
+  "seasonality_priors": "10.0",
+  "disable_regressors": false
+}

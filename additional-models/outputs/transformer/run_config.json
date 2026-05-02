@@ -1,0 +1,21 @@
+{
+  "targets": "all",
+  "freqs": "all",
+  "exogs": "all",
+  "no_plots": false,
+  "seed": 42,
+  "lookbacks": "22",
+  "d_models": "32",
+  "nheads": "4",
+  "num_layers": "1",
+  "dropouts": "0.1",
+  "learning_rates": "0.001",
+  "dim_feedforward": 64,
+  "weight_decay": 0.0,
+  "batch_size": 64,
+  "epochs": 30,
+  "patience": 5,
+  "cpu": false,
+  "mps": false,
+  "show_epoch_progress": false
+}

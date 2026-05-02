@@ -1,0 +1,12 @@
+{
+  "targets": "all",
+  "freqs": "all",
+  "exogs": "all",
+  "no_plots": false,
+  "seed": 42,
+  "fit_algorithms": "ridge,linear",
+  "yearly_seasonality": "0,8",
+  "changepoint_methods": "auto,none",
+  "weekly_seasonality": false,
+  "disable_regressors": false
+}
