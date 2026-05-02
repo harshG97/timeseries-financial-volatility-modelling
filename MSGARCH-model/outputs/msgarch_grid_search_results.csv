@@ -1,0 +1,3 @@
+target,freq,exog,k,model,dist,aic
+SPY,daily,no_exog,2,gjrGARCH,std,11130.578469974882
+SPY,daily,with_exog,2,gjrGARCH,std,11115.262063731756
