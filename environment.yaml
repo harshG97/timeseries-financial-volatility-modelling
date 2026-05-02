@@ -12,6 +12,11 @@ dependencies:
   - tqdm
   - pyyaml
   - pytorch::pytorch
+  - seaborn
+  - scipy
+  - ipykernel
   - pip:
       - statsmodels
       - arch
+      - rpy2
+      - yfinance
