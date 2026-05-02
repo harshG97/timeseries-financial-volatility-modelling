@@ -1,0 +1,13 @@
+target,freq,exog,best_p,best_o,best_q,aic
+SPY,daily,no_exog,1,1,1,11126.927904781345
+SPY,daily,with_exog,1,1,1,11100.087289963989
+SPY,weekly,no_exog,1,1,1,3102.5248398341764
+SPY,weekly,with_exog,1,1,1,3099.947505204031
+OIL,daily,no_exog,1,1,3,19121.568353230643
+OIL,daily,with_exog,1,1,3,19127.853740304847
+OIL,weekly,no_exog,1,1,1,4410.886700808898
+OIL,weekly,with_exog,1,1,1,4417.948864386707
+GOLD,daily,no_exog,1,1,1,12673.127159654987
+GOLD,daily,with_exog,1,1,1,12664.505595673629
+GOLD,weekly,no_exog,1,1,2,3452.018938172342
+GOLD,weekly,with_exog,1,1,3,3456.084702325983

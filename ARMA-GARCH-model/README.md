@@ -1,37 +1,76 @@
-# ARMA-GJR-GARCH Volatility Modeling
-
-This directory contains the scripts and results for fitting, validating, and analyzing ARMA-GJR-GARCH models on financial time series data.
+# ARMA-GJR-GARCH / GARCH-X Volatility Modeling
 
 ## Methodology
 
-The goal is to model and forecast the volatility of three key financial assets: SPY (S&P 500 ETF), OIL (WTI Crude Futures), and GOLD. The modeling approach follows the guidelines outlined in `data/splits/explanation.md`.
+Models and forecasts volatility of SPY, OIL, and GOLD across the 12-cell
+grid (3 targets × 2 frequencies × 2 feature regimes).
 
-The core of the methodology is a two-stage process for each of the 12 modeling cells (3 targets × 2 frequencies × 2 feature sets):
+- **`no_exog`**: Constant-mean GJR-GARCH — univariate, uses only the target's
+  own return history.
+- **`with_exog`**: ARX-mean GJR-GARCH (GARCH-X) — cross-asset returns, DXY,
+  and VIX enter the mean equation as exogenous regressors.
 
-1.  **Grid Search on Training Data**: An ARMA(p,q) - GJR-GARCH(p,o,q) model is fitted on the **training set**. A grid search is performed over a range of `p`, `o`, and `q` parameters. The best parameter combination is selected based on the Akaike Information Criterion (AIC).
-2.  **Validation and Analysis**: The best model from the grid search is then used for an out-of-sample "sanity check" on the **validation set**. This involves forecasting on the validation data and calculating the Mean Squared Error (MSE). Residual analysis is also performed to check for model adequacy.
+### Pipeline
 
-The final model is intended to be refit on the combined training and validation data before final evaluation on the test set.
+1. **Grid search** (`garch_grid_search.py`): searches GARCH (p,o,q) on
+   training data, selects by AIC.
+2. **Validation + Test ECV** (`garch_validation_and_analysis.py`):
+   walk-forward 1-step-ahead on validation (sanity check) and test
+   (expanding cross-validation with every-step refitting).
+3. **RFP evaluation** (`garch_rfp.py`): evaluates on RFP windows using
+   `src/rfp_generator.py`.
 
-## Data and Features
+## Quick start
 
--   **Targets**: SPY, OIL, GOLD
--   **Frequencies**: `daily`, `weekly`
--   **Data Splits**: The data is split into `train`, `val`, and `test` sets. The splits are located in the `data/splits` directory.
--   **Feature Regimes**:
-    -   `no_exog`: The model only uses the target's own return history.
-    -   `with_exog`: The model uses the target's return history plus returns from the other assets and market indicators (VIX, DXY).
+### 1. Grid search (one cell)
 
-## Scripts
+```bash
+python ARMA-GARCH-model/garch_grid_search.py --targets SPY --freqs daily --exogs no_exog
+```
 
--   `garch_grid_search.py`: This script performs the initial grid search on the training data for each of the 12 modeling cells. It iterates through different `p`, `o`, and `q` values and saves the best parameters based on AIC.
--   `garch_validation_and_analysis.py`: This script takes the best parameters from the grid search, fits the model on the training data, evaluates its performance on the validation set, and performs residual analysis.
+### 2. Full 12-cell grid search
 
-## Results
+```bash
+python ARMA-GARCH-model/garch_grid_search.py
+```
 
--   `garch_grid_search_results.csv`: This file contains the best `p`, `o`, and `q` parameters found for each modeling cell during the grid search on the training data.
--   `garch_validation_results.csv`: This file contains the out-of-sample performance metrics (MSE, Log-Likelihood, AIC, BIC) for each model when evaluated on the validation set.
--   `validation_analysis/`: This directory contains the residual analysis plots for each model, including:
-    -   Standardized Residuals over time.
-    -   ACF of Standardized Residuals.
-    -   ACF of Squared Standardized Residuals.
+### 3. Validation + test evaluation
+
+```bash
+python ARMA-GARCH-model/garch_validation_and_analysis.py
+```
+
+### 4. RFP evaluation
+
+```bash
+python ARMA-GARCH-model/garch_rfp.py
+```
+
+### Data-config filtering
+
+All three scripts support the same CLI filtering pattern:
+
+| Flag | Values | Default |
+|------|--------|---------|
+| `--targets` | `SPY,OIL,GOLD` | all |
+| `--freqs` | `daily,weekly` | all |
+| `--exogs` | `no_exog,with_exog` | all |
+
+RFP also supports `--regimes` (e.g. `GFC,COVID`).
+
+## Outputs
+
+Written to `ARMA-GARCH-model/outputs/`:
+
+- `garch_grid_search_results.csv`: best (p,o,q) and AIC per cell
+- `garch_validation_results.csv`: validation walk-forward metrics
+- `garch_test_results.csv`: test ECV metrics (MSE, RMSE, MAE, QLIKE, VaR)
+- `forecasts/{target}_{freq}_{exog}_test_forecasts.csv`: per-date predictions
+- `plots/{target}/{freq}/{exog}/`: diagnostic plots per cell
+- `rfp/garch_rfp_results.csv`: per-window RFP metrics
+- `rfp/garch_rfp_summary.csv`: per-regime aggregates
+- `rfp/forecasts/`: per-window forecast CSVs
+- `rfp/plots/`: RFP diagnostic plots (per-window, regime bars, ablation,
+  heatmap, boxplot)
+
+Metrics: MSE, RMSE, MAE, QLIKE, 1%/5% VaR hit rates and exception counts.
