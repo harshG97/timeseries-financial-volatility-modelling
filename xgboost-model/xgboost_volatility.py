@@ -204,13 +204,13 @@ def default_grid() -> list[XGBConfig]:
     forming around outlier days, reg_lambda for L2 on leaf weights, and
     proper sweeps over subsample / colsample_bytree (previously fixed).
     """
-    depths = [3, 5, 7]
-    lrs = [0.03, 0.05, 0.1]
-    ests = [100, 200, 500]
+    depths = [2, 3, 5,]
+    lrs = [0.005, 0.01, 0.03, 0.05, 0.1]
+    ests = [50, 100, 150, 200, 300]
     mcws = [1, 5, 20]
     lambdas = [1, 10]
-    subs = [0.7, 0.9]
-    cols = [0.7, 0.9]
+    subs = [0.6, 0.8, 1.0]
+    cols = [0.6, 0.8,]
 
     grid = []
     for d, lr, n, mcw, lam, sub, col in itertools.product(
