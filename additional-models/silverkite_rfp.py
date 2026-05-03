@@ -140,7 +140,7 @@ def evaluate_window(
     from statistics import NormalDist
     sigma = np.sqrt(pred_var)
     fc_frame = pd.DataFrame({
-        "date": pd.to_datetime(forecast_df["date"]).strftime("%Y-%m-%d"),
+        "date": pd.to_datetime(forecast_df["date"]).dt.strftime("%Y-%m-%d"),
         "ret_pct": ret_pct,
         "realized_var": y_true,
         "pred_var": pred_var,
