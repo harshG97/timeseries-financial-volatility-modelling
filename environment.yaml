@@ -23,6 +23,7 @@ dependencies:
   - pip:
       - statsmodels
       - arch
+      - xgboost
       - yfinance
       - holidays==0.24
       - cmdstanpy
