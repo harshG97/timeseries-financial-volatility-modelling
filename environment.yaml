@@ -23,7 +23,7 @@ dependencies:
       - statsmodels
       - arch
       - yfinance
-      - holidays==0.24.2
+      - holidays==0.24
       - prophet<=1.1.5
       - cmdstanpy
       - greykite
