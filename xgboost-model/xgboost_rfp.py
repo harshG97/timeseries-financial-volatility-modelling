@@ -112,6 +112,8 @@ def evaluate_window(window, config: XGBConfig, use_exog: bool, seed: int) -> tup
         })
 
     fc_frame = pd.DataFrame(rows)
+    fc_frame["std_resid"] = fc_frame["ret_pct"] / np.maximum(fc_frame["pred_vol"], 1e-8)
+    fc_frame["squared_std_resid"] = np.square(fc_frame["std_resid"])
     m = metrics(test_y, pred_var_path, test_ret)
     
     m.update({
@@ -182,7 +184,15 @@ def run(args: argparse.Namespace) -> None:
     results_df = pd.DataFrame(all_results)
     results_df.to_csv(RFP_OUT / "xgboost_rfp_results.csv", index=False)
 
-    summary = results_df.groupby(["target", "freq", "exog", "regime"])[["mse", "rmse", "mae", "qlike", "var_1_hit_rate"]].mean().reset_index()
+    # Canonical summary schema (matches garch_rfp / transformer_rfp / lstm_rfp):
+    # mean and median per metric per (target, freq, exog, regime).
+    group_cols = ["target", "freq", "exog", "regime"]
+    metric_cols = ["mse", "rmse", "mae", "qlike",
+                   "var_1_hit_rate", "var_5_hit_rate"]
+    available = [c for c in metric_cols if c in results_df.columns]
+    summary = results_df.groupby(group_cols)[available].agg(["mean", "median"])
+    summary.columns = ["_".join(c) for c in summary.columns]
+    summary = summary.reset_index()
     summary.to_csv(RFP_OUT / "xgboost_rfp_summary.csv", index=False)
     
     print(f"Done. Saved to {RFP_OUT.relative_to(ROOT)}")

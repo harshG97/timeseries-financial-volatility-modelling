@@ -186,7 +186,10 @@ def expanding_test_forecast(frames: dict[str, pd.DataFrame], columns: list[str],
         })
         history = pd.concat([history, test.iloc[[step]]], ignore_index=True)
 
-    return pd.DataFrame(rows)
+    fc_frame = pd.DataFrame(rows)
+    fc_frame["std_resid"] = fc_frame["ret_pct"] / np.maximum(fc_frame["pred_vol"], 1e-8)
+    fc_frame["squared_std_resid"] = np.square(fc_frame["std_resid"])
+    return fc_frame
 
 def default_grid() -> list[XGBConfig]:
     depths = [2, 3, 5]
