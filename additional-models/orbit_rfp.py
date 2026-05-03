@@ -124,8 +124,8 @@ def evaluate_window(
     yhat_log = pred_df[candidate_cols[0]].values
     pred_var = np.maximum(np.exp(yhat_log), LOG_VAR_FLOOR)
 
-    y_true = realized_variance(forecast_df["ret"]).values
-    ret_pct = returns_pct(forecast_df["ret"]).values
+    y_true = realized_variance(forecast_df["ret"])
+    ret_pct = returns_pct(forecast_df["ret"])
 
     m = metrics(y_true, pred_var, ret_pct)
     m.update({
