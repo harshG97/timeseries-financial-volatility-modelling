@@ -69,3 +69,8 @@ node_modules/
 npm-debug.log
 yarn-error.log
 yarn-debug.log
+
+# =========================
+# Project Specific
+# =========================
+xgboost-model/final_report_xgboost.ipynb
