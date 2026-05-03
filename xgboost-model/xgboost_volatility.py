@@ -48,6 +48,17 @@ class XGBConfig:
 def set_seed(seed: int) -> None:
     np.random.seed(seed)
 
+
+def parse_selection(raw: str, allowed: list[str]) -> list[str]:
+    """Parse a comma-separated selection or 'all' against an allowed list."""
+    if raw.lower() == "all":
+        return list(allowed)
+    selected = [x.strip() for x in raw.split(",") if x.strip()]
+    bad = sorted(set(selected) - set(allowed))
+    if bad:
+        raise ValueError(f"Invalid values {bad}; allowed values are {allowed}")
+    return selected
+
 def load_cell(freq: str, exog: str, target: str) -> dict[str, pd.DataFrame]:
     base = SPLIT_DIR / freq / exog / target
     frames = {}
@@ -177,9 +188,9 @@ def run(args: argparse.Namespace) -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     (OUT_DIR / "forecasts").mkdir(parents=True, exist_ok=True)
 
-    targets = TARGETS
-    freqs = FREQS
-    exogs = EXOGS
+    targets = parse_selection(args.targets, TARGETS)
+    freqs = parse_selection(args.freqs, FREQS)
+    exogs = parse_selection(args.exogs, EXOGS)
     grid = default_grid()
 
     selection_rows = []
@@ -224,5 +235,11 @@ def run(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--targets", default="all",
+                        help="Comma list or 'all': SPY,OIL,GOLD (default: all)")
+    parser.add_argument("--freqs", default="all",
+                        help="Comma list or 'all': daily,weekly (default: all)")
+    parser.add_argument("--exogs", default="all",
+                        help="Comma list or 'all': no_exog,with_exog (default: all)")
     parser.add_argument("--seed", type=int, default=42)
     run(parser.parse_args())
