@@ -17,6 +17,7 @@ dependencies:
   - ipykernel
   - r-base
   - rpy2
+  - setuptools
   - pip:
       - statsmodels
       - arch
