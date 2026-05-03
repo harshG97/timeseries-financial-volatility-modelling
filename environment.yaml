@@ -18,6 +18,7 @@ dependencies:
   - r-base
   - rpy2
   - setuptools
+  - pmdarima
   - pip:
       - statsmodels
       - arch
