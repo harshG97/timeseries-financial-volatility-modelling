@@ -85,6 +85,15 @@ def make_dataset(df: pd.DataFrame, columns: list[str]) -> tuple[np.ndarray, np.n
     return x, y, dates, returns_pct
 
 def train_model(train_x: np.ndarray, train_y: np.ndarray, config: XGBConfig, seed: int) -> xgb.XGBRegressor:
+    """Fit XGBoost on the LOG of realized variance.
+
+    Realized variance is strictly positive but reg:squarederror is unbounded,
+    so on raw variance the model can output negative or near-zero predictions
+    that blow up QLIKE = mean(log(pred) + RV/pred) for any single bad day.
+    Fitting log(RV) instead guarantees strictly-positive predictions after the
+    exponential in `predict`, and keeps the symmetric squared loss aligned
+    with QLIKE's log-space structure.
+    """
     model = xgb.XGBRegressor(
         max_depth=config.max_depth,
         learning_rate=config.learning_rate,
@@ -95,12 +104,18 @@ def train_model(train_x: np.ndarray, train_y: np.ndarray, config: XGBConfig, see
         random_state=seed,
         n_jobs=-1
     )
-    model.fit(train_x, train_y)
+    log_y = np.log(np.maximum(train_y, 1e-12).astype(np.float32))
+    model.fit(train_x, log_y)
     return model
 
 def predict(model: xgb.XGBRegressor, x: np.ndarray) -> np.ndarray:
-    pred = model.predict(x)
-    return np.maximum(pred, 1e-8)
+    """Exponentiate the log-variance prediction back to variance scale.
+
+    The 1e-8 floor is a paranoia guard — np.exp(...) cannot produce
+    non-positive values, but underflow could in principle round to 0.
+    """
+    log_pred = model.predict(x)
+    return np.maximum(np.exp(log_pred), 1e-8).astype(np.float32)
 
 def metrics(y_true: np.ndarray, pred_var: np.ndarray, returns_pct: np.ndarray) -> dict[str, float]:
     pred_var = np.maximum(pred_var, 1e-8)
