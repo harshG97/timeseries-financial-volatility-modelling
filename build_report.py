@@ -153,7 +153,9 @@ def style_table_cell(cell, *, bold=False, align=None):
             run.bold = bold
 
 
-def add_table(doc, rows, header=True, col_widths=None):
+def add_table(doc, rows, header=True, col_widths=None, bold_cells=None):
+    """Add a table; bold_cells is an optional iterable of (row, col) tuples."""
+    bold_set = set(bold_cells or [])
     table = doc.add_table(rows=len(rows), cols=len(rows[0]))
     table.style = "Light Grid Accent 1"
     table.autofit = True
@@ -161,7 +163,8 @@ def add_table(doc, rows, header=True, col_widths=None):
         for j, val in enumerate(row):
             cell = table.rows[i].cells[j]
             cell.text = str(val)
-            style_table_cell(cell, bold=(header and i == 0),
+            cell_bold = (header and i == 0) or ((i, j) in bold_set)
+            style_table_cell(cell, bold=cell_bold,
                              align=WD_ALIGN_PARAGRAPH.CENTER if j > 0 else WD_ALIGN_PARAGRAPH.LEFT)
     if col_widths is not None:
         for row in table.rows:
@@ -384,7 +387,10 @@ def build():
 
     add_para(doc)
     add_caption(doc, "Table 2. Descriptive statistics of SPY daily log "
-                     "returns (×100), full sample.")
+                     "returns (×100). Computed over the full Yahoo Finance "
+                     "history (2000-01-03 to 2026-04-29) for context; "
+                     "model fitting and evaluation are restricted to the "
+                     "manifest window in Table 1.")
     add_table(doc, [
         ["Series", "N", "Mean", "Median", "Std", "Min", "Max", "Skew", "ExKurt"],
         ["SPY ret", "6,537", "0.031", "0.069", "1.222",
@@ -525,13 +531,17 @@ def build():
     add_para(doc,
         "Out-of-sample evaluation uses a one-step-ahead expanding-window "
         "design on the test block. For each test date t the model is "
-        "conditioned on all data up to t-1, produces σ̂ₜ², and rolls forward; "
-        "every 20 trading days the model is fully refit (parameters re-"
-        "estimated for GARCH-family models, weights warm-started for the "
-        "neural networks). The same protocol is applied to all five models "
-        "so that compute does not advantage any one approach. Forecasts "
-        "are scored against the contemporaneous squared return rₜ² as a "
-        "realised-variance proxy. Four classes of metric are reported:")
+        "conditioned on all data up to t-1, produces σ̂ₜ², and rolls "
+        "forward. Refit cadence differs by computational cost: GJR-GARCH "
+        "is fast enough to re-estimate every step (parameters re-fit "
+        "daily); MS-GARCH, LSTM-with-attention, Transformer, and "
+        "XGBoost are refit every 20 trading days, with one-step-ahead "
+        "forecasts produced from the most recent fit on intervening "
+        "days. The same data, the same expanding history, and the same "
+        "scoring code are applied to every model so cross-model "
+        "comparisons are direct. Forecasts are scored against the "
+        "contemporaneous squared return rₜ² as a realised-variance "
+        "proxy. Four classes of metric are reported:")
     add_bullet(doc, "RMSE and MAE of σ̂ₜ² against rₜ² (point accuracy).",
                bold_lead="Point accuracy: ")
     add_bullet(doc, "QLIKE = E[log σ̂ₜ² + rₜ²/σ̂ₜ²], a robust loss that is "
@@ -567,8 +577,26 @@ def build():
         "1% and 5% levels).")
 
     add_para(doc)
-    add_caption(doc, "Table 5. SPY Daily test-block results. Best per "
-                     "metric within each configuration is shown in bold.")
+    add_caption(doc, "Table 5. SPY daily test-block results (583 days, "
+                     "expanding-window 1-step-ahead). Best per metric "
+                     "within each configuration block is shown in bold; "
+                     "the global best across both blocks is underlined "
+                     "by the discussion below. Variance is in pct² units; "
+                     "VaR exceptions are absolute counts (expected ≈5.83 "
+                     "at 1% and ≈29.15 at 5%).")
+    # bold cells: (row_idx, col_idx) — header is row 0.
+    # Within no_exog block (rows 1-5):
+    #   RMSE col 2 best = MS-GARCH (row 2), MAE col 3 best = XGBoost (row 5),
+    #   QLIKE col 4 best = GJR-GARCH (row 1), VaR1 col 5 closest = GJR (row 1),
+    #   VaR5 col 6 closest = GJR (row 1).
+    # Within with_exog block (rows 6-10):
+    #   RMSE col 2 best = MS-GARCH (row 7), MAE col 3 best = XGBoost (row 10),
+    #   QLIKE col 4 best = LSTM-Att (row 8), VaR1 col 5 closest = GJR (row 6),
+    #   VaR5 col 6 closest = GJR (row 6).
+    bold_cells = [
+        (2, 2), (5, 3), (1, 4), (1, 5), (1, 6),
+        (7, 2), (10, 3), (8, 4), (6, 5), (6, 6),
+    ]
     add_table(doc, [
         ["Model", "Config", "RMSE", "MAE", "QLIKE", "VaR1% Exc", "VaR5% Exc"],
         ["GJR-GARCH(1,1)", "no_exog",   "4.342", "1.129", "0.652", "11", "31"],
@@ -581,26 +609,36 @@ def build():
         ["LSTM-Attention", "with_exog", "4.419", "1.160", "0.649", "16", "33"],
         ["Transformer",    "with_exog", "4.295", "1.151", "0.765", "19", "41"],
         ["XGBoost",        "with_exog", "4.721", "0.926", "2.834", "65", "90"],
-    ])
+    ], bold_cells=bold_cells)
 
     add_para(doc,
-        "Three findings stand out. First, on RMSE the with_exog MS-GARCH "
+        "Four findings stand out. First, on RMSE the with_exog MS-GARCH "
         "(4.286) and with_exog Transformer (4.295) are statistically "
         "indistinguishable from each other and edge out the single-regime "
-        "GJR baseline by ≈1% under no_exog. Second, on QLIKE the LSTM-with-"
-        "attention with exogenous features attains the global minimum "
-        "(0.649), narrowly beating both MS-GARCH variants. Third, although "
-        "XGBoost wins on MAE (0.926), its QLIKE is 4–5× worse and its 1% "
-        "VaR exception count is 65–68 against an expected 5.83 — i.e. the "
-        "tree-based model produces a tight median forecast but "
-        "systematically under-estimates the conditional variance, an "
-        "outcome consistent with squared-error trees converging on the "
-        "conditional mean of rₜ² rather than its right-tail behaviour. "
-        "GJR-GARCH with exogenous regressors actually deteriorates on RMSE "
-        "and QLIKE relative to its no_exog counterpart, which we attribute "
-        "to instability in the ARX mean equation under regressor "
-        "collinearity; the regime-switching MS-GARCH absorbs the same "
-        "exogenous information without that pathology.")
+        "GJR baseline (4.342, no_exog) by ≈1%. Second, on QLIKE the "
+        "LSTM-with-attention (with_exog) attains the global minimum "
+        "(0.649), with GJR-GARCH (no_exog, 0.652), MS-GARCH (with_exog, "
+        "0.668), and LSTM-Attention (no_exog, 0.668) clustered within "
+        "≈3% — the four models are essentially tied on this loss. Third, "
+        "although XGBoost wins on MAE (0.926), its QLIKE is 4–5× worse "
+        "and its 1% VaR exception count is 65–68 against an expected "
+        "5.83 — the tree-based model produces a tight median forecast "
+        "but systematically under-estimates the conditional variance, an "
+        "outcome consistent with squared-error regression trees "
+        "converging on the conditional mean of rₜ² rather than its "
+        "right-tail behaviour. Because MAE and QLIKE point in opposite "
+        "directions for XGBoost, this row of Table 5 is the most direct "
+        "evidence in the project that variance forecasts must be scored "
+        "with proper, scale-aware losses (QLIKE) and tail-calibration "
+        "diagnostics (VaR exceptions), not merely with squared- or "
+        "absolute-error losses on the variance proxy. Fourth, GJR-GARCH "
+        "with exogenous regressors deteriorates on RMSE and QLIKE "
+        "relative to its no_exog counterpart, which we attribute to "
+        "instability in the ARX mean equation under regressor "
+        "collinearity; MS-GARCH absorbs the same exogenous information "
+        "without that pathology, presumably because the regime-switching "
+        "structure absorbs the slow-moving macro signal into the state "
+        "transition rather than the conditional mean.")
 
     add_para(doc,
         "Adding exogenous features delivers a consistent but modest "
@@ -691,6 +729,28 @@ def build():
 
     # ---------- 5. Conclusions ----------
     add_heading(doc, "5. Conclusions")
+
+    add_heading(doc, "5.0 Revisiting Prior Expectations", level=2)
+    add_para(doc,
+        "We entered this study with three prior expectations (§2.1). The "
+        "first — that GARCH-family models would remain competitive on "
+        "point accuracy — is confirmed: GJR-GARCH(1,1) is within 1% of "
+        "the best RMSE on no_exog and MS-GARCH wins outright on RMSE "
+        "under with_exog. The second — that machine-learning models "
+        "would win in regimes where non-linear interactions with macro "
+        "features matter — is partially confirmed: the LSTM-with-"
+        "attention is the QLIKE leader and the Transformer ties MS-GARCH "
+        "on RMSE, both only when exogenous features are included. The "
+        "third — that MS-GARCH would improve VaR calibration — is "
+        "supported on the test block (12 1% breaches against an "
+        "expected 5.83 is conservative but well within the Kupiec "
+        "acceptance region) but is not as dramatic as we expected; the "
+        "single-regime GJR with exogenous features is actually the most "
+        "calibrated by raw exception count, at the cost of much worse "
+        "RMSE. The XGBoost result was a genuine surprise: we did not "
+        "anticipate that a competently tuned tree ensemble would so "
+        "comprehensively under-predict variance, and this finding shapes "
+        "our recommendations below.")
 
     add_heading(doc, "5.1 Success and Best Method", level=2)
     add_para(doc,
