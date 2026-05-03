@@ -43,6 +43,8 @@ class XGBConfig:
     n_estimators: int = 100
     subsample: float = 0.8
     colsample_bytree: float = 0.8
+    min_child_weight: float = 1.0
+    reg_lambda: float = 1.0
 
 
 def set_seed(seed: int) -> None:
@@ -100,6 +102,8 @@ def train_model(train_x: np.ndarray, train_y: np.ndarray, config: XGBConfig, see
         n_estimators=config.n_estimators,
         subsample=config.subsample,
         colsample_bytree=config.colsample_bytree,
+        min_child_weight=config.min_child_weight,
+        reg_lambda=config.reg_lambda,
         objective="reg:squarederror",
         random_state=seed,
         n_jobs=-1
@@ -192,13 +196,35 @@ def expanding_test_forecast(frames: dict[str, pd.DataFrame], columns: list[str],
     return fc_frame
 
 def default_grid() -> list[XGBConfig]:
-    depths = [2, 3, 5]
-    lrs = [0.01, 0.05, 0.1]
-    ests = [50, 100, 200]
-    
+    """Cartesian search over 7 axes (648 configs).
+
+    Tuned for daily realized variance: drops the underfit corners
+    (depth=2, lr=0.01) and adds regularization knobs that matter for
+    noisy positive-skewed targets — min_child_weight to prevent leaves
+    forming around outlier days, reg_lambda for L2 on leaf weights, and
+    proper sweeps over subsample / colsample_bytree (previously fixed).
+    """
+    depths = [3, 5, 7]
+    lrs = [0.03, 0.05, 0.1]
+    ests = [100, 200, 500]
+    mcws = [1, 5, 20]
+    lambdas = [1, 10]
+    subs = [0.7, 0.9]
+    cols = [0.7, 0.9]
+
     grid = []
-    for d, lr, n in itertools.product(depths, lrs, ests):
-        grid.append(XGBConfig(max_depth=d, learning_rate=lr, n_estimators=n))
+    for d, lr, n, mcw, lam, sub, col in itertools.product(
+        depths, lrs, ests, mcws, lambdas, subs, cols
+    ):
+        grid.append(XGBConfig(
+            max_depth=d,
+            learning_rate=lr,
+            n_estimators=n,
+            subsample=sub,
+            colsample_bytree=col,
+            min_child_weight=mcw,
+            reg_lambda=lam,
+        ))
     return grid
 
 def run(args: argparse.Namespace) -> None:
