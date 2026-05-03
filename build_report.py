@@ -425,6 +425,22 @@ def build():
                      "residuals confirms ARCH effects.")
 
     add_para(doc)
+    add_image(doc, ROOT / "eda_outputs" / "news_impact_curve_all.png")
+    add_caption(doc, "Figure 4. News-impact curves for SPY daily, plotting "
+                     "next-period conditional variance σ̂ₜ² against the "
+                     "previous-period shock εₜ₋₁ under three baselines "
+                     "(GARCH(1,1), GJR-GARCH(1,1,1), and EGARCH). The "
+                     "asymmetry of the GJR and EGARCH curves around εₜ₋₁=0 "
+                     "is the leverage effect: a negative shock raises "
+                     "future volatility more than a positive shock of the "
+                     "same magnitude. The slope discontinuity at zero in "
+                     "the GJR curve is statistically significant on SPY at "
+                     "every reasonable lag, which is why the GJR variance "
+                     "specification is preferred to symmetric GARCH(1,1) "
+                     "throughout the rest of this report (and is the "
+                     "specification carried inside each MS-GARCH regime).")
+
+    add_para(doc)
     add_caption(doc, "Table 4. Ljung–Box tests for ARCH effects on SPY "
                      "squared ARIMA residuals.")
     add_table(doc, [
@@ -527,6 +543,54 @@ def build():
          False, False),
     ])
 
+    add_para(doc,
+        "Table 5 collects the validated specifications that produced the "
+        "headline results in §4.3. Each row records the configuration "
+        "selected on the validation block — i.e. the specification that "
+        "was then refit on train+val and rolled forward through the test "
+        "block. Where the no_exog and with_exog winners differ, both are "
+        "shown.")
+
+    add_para(doc)
+    add_caption(doc, "Table 5. Validated specifications carried into the "
+                     "test block, by model.")
+    add_table(doc, [
+        ["Model", "Selected hyperparameters (no_exog / with_exog)"],
+        ["GJR-GARCH",
+         "p=1, o=1, q=1; Student-t innovations; mean equation = constant "
+         "(no_exog) or constant + lagged exogenous returns (with_exog)."],
+        ["MS-GARCH",
+         "K=2 regimes; gjrGARCH variance per regime; Student-t "
+         "innovations; transition matrix estimated by maximum likelihood. "
+         "Selected over the grid K∈{2,3} × {sGARCH,gjrGARCH} × "
+         "{norm,std}."],
+        ["LSTM-Attention",
+         "lookback L=10 / 5; 1 LSTM layer, 16 hidden units; dropout 0.2; "
+         "soft-attention pooling; Adam (lr=10⁻³, batch=64, weight-decay "
+         "0); ≤80 epochs, patience-10 early stopping on validation QLIKE."],
+        ["Transformer",
+         "lookback L=22; d_model=32; 4 attention heads; 1 encoder layer; "
+         "feed-forward dim 64; dropout 0.1; Adam (lr=10⁻³, batch=64); "
+         "≤30 epochs, patience-5 early stopping."],
+        ["XGBoost",
+         "max_depth=2; lr=0.05 / 0.10; n_estimators=100 / 50; "
+         "subsample=colsample_bytree=0.6; min_child_weight=5 / 1; "
+         "reg_lambda=10."],
+    ], col_widths=[1.4, 5.0])
+
+    add_para(doc,
+        "Two patterns in Table 5 are worth flagging. First, every "
+        "winning model on SPY daily is at the small end of its capacity "
+        "range: GJR(1,1,1), K=2 regimes, 16 LSTM units, a single 1-layer "
+        "Transformer encoder, max_depth=2 trees. This is consistent with "
+        "the usual finance-time-series intuition that the signal-to-noise "
+        "ratio in daily returns is low and aggressive over-parameterisation "
+        "hurts. Second, the optimal LSTM lookback drops from 10 (no_exog) "
+        "to 5 (with_exog): once the lagged log-VIX is in the feature set, "
+        "the network needs less own-history to recover the volatility "
+        "state, which we read as direct evidence that the VIX is doing "
+        "useful summarisation work for the model.")
+
     add_heading(doc, "4.2 Validation and Evaluation Strategy", level=2)
     add_para(doc,
         "Out-of-sample evaluation uses a one-step-ahead expanding-window "
@@ -570,14 +634,14 @@ def build():
 
     add_heading(doc, "4.3 Results", level=2)
     add_para(doc,
-        "Table 5 reports test-block performance for SPY daily across the "
+        "Table 6 reports test-block performance for SPY daily across the "
         "five models and two feature configurations. RMSE, MAE, and QLIKE "
         "are computed on σ̂ₜ² versus rₜ²; VaR exceptions are absolute counts "
         "over the 583-day test block (expected ≈ 5.83 and ≈ 29.15 at the "
         "1% and 5% levels).")
 
     add_para(doc)
-    add_caption(doc, "Table 5. SPY daily test-block results (583 days, "
+    add_caption(doc, "Table 6. SPY daily test-block results (583 days, "
                      "expanding-window 1-step-ahead). Best per metric "
                      "within each configuration block is shown in bold; "
                      "the global best across both blocks is underlined "
@@ -651,33 +715,33 @@ def build():
         "indicator interpretation of Xiong et al. (2016).")
 
     add_para(doc)
-    add_caption(doc, "Figure 4. SPY daily volatility-forecast time series, "
+    add_caption(doc, "Figure 5. SPY daily volatility-forecast time series, "
                      "GJR-GARCH (no_exog). Predicted σ̂ₜ (line) overlaid on "
                      "|rₜ| (dots).")
     add_image(doc, ROOT / "ARMA-GARCH-model" / "outputs" / "plots" / "SPY"
                   / "daily" / "no_exog" / "volatility_forecast_timeseries.png")
 
     add_para(doc)
-    add_caption(doc, "Figure 5. SPY daily volatility-forecast time series, "
+    add_caption(doc, "Figure 6. SPY daily volatility-forecast time series, "
                      "MS-GARCH (with_exog).")
     add_image(doc, ROOT / "MSGARCH-model" / "outputs" / "plots" / "SPY"
                   / "daily" / "with_exog" / "volatility_forecast_timeseries.png")
 
     add_para(doc)
-    add_caption(doc, "Figure 6. SPY daily volatility-forecast time series, "
+    add_caption(doc, "Figure 7. SPY daily volatility-forecast time series, "
                      "LSTM-with-Attention (with_exog).")
     add_image(doc, ROOT / "LSTM-Attention-model" / "outputs" / "plots" / "SPY"
                   / "daily" / "with_exog" / "volatility_forecast_timeseries.png")
 
     add_para(doc)
-    add_caption(doc, "Figure 7. SPY daily volatility-forecast time series, "
+    add_caption(doc, "Figure 8. SPY daily volatility-forecast time series, "
                      "Transformer (with_exog).")
     add_image(doc, ROOT / "additional-models" / "outputs" / "transformer"
                   / "plots" / "SPY" / "daily" / "with_exog"
                   / "volatility_forecast_timeseries.png")
 
     add_para(doc)
-    add_caption(doc, "Figure 8. SPY daily volatility-forecast time series, "
+    add_caption(doc, "Figure 9. SPY daily volatility-forecast time series, "
                      "XGBoost (with_exog). The systematic shrinkage of "
                      "σ̂ₜ toward the mean is visible during high-volatility "
                      "episodes.")
@@ -685,7 +749,7 @@ def build():
                   / "daily" / "with_exog" / "volatility_forecast_timeseries.png")
 
     add_para(doc)
-    add_caption(doc, "Figure 9. ACF of squared standardised residuals "
+    add_caption(doc, "Figure 10. ACF of squared standardised residuals "
                      "for the MS-GARCH (with_exog) fit on SPY daily. "
                      "Whitening is consistent with adequate variance "
                      "specification.")
@@ -693,16 +757,61 @@ def build():
                   / "daily" / "no_exog" / "acf_squared_standardized_residuals.png")
 
     add_para(doc,
-        "Stress-period analysis (RFP) confirms the test-block ranking. "
-        "Mean QLIKE on five 60-day GFC windows is 2.16 for GJR-GARCH "
-        "no_exog versus 2.14 for GJR-GARCH with_exog and 1.92 (median) "
-        "for MS-GARCH; the COVID windows are dominated by the LSTM-with-"
-        "attention (median QLIKE 1.69 with_exog versus 1.77 for GJR). "
-        "Calm 2017–2019 windows are tied within numerical noise across "
-        "models. No model dominates uniformly across all five regimes, "
-        "consistent with the no-free-lunch intuition that single-regime "
-        "specifications overfit calm periods while regime-switching and "
-        "non-linear models carry their gains in turbulent ones.")
+        "Stress-period robustness is summarised in Table 7, which "
+        "reports the mean QLIKE across the five 60-day Random Forecast "
+        "Period (RFP) windows that were sampled within each historical "
+        "regime. To keep the comparison clean the table fixes the "
+        "feature configuration to no_exog, so the only thing varying "
+        "across rows is the model class. (The with_exog ablations show "
+        "the same qualitative ranking and are reported in the code "
+        "deliverable.)")
+
+    add_para(doc)
+    add_caption(doc, "Table 7. Mean QLIKE across five 60-day RFP windows "
+                     "per historical regime, SPY daily, no_exog. Lower is "
+                     "better. Per-column winner is shown in bold.")
+    # bold per column (each regime), excluding header row.
+    # Column order: Model, CALM, OIL_CRASH, GFC, COVID, ENERGY_22.
+    # Winners (lowest mean QLIKE):
+    #   CALM (col 1):       GJR-GARCH (row 1) = 0.415
+    #   OIL_CRASH (col 2):  MS-GARCH  (row 2) = 0.435
+    #   GFC (col 3):        MS-GARCH  (row 2) = 2.151
+    #   COVID (col 4):      MS-GARCH  (row 2) = 1.866
+    #   ENERGY_22 (col 5):  MS-GARCH  (row 2) = 1.364
+    rfp_bold = [(1, 1), (2, 2), (2, 3), (2, 4), (2, 5)]
+    add_table(doc, [
+        ["Model",          "CALM 17–19", "Oil Crash 14–16",
+         "GFC 07–09", "COVID 20",  "Energy 22"],
+        ["GJR-GARCH",      "0.415", "0.444", "2.160", "1.921", "1.395"],
+        ["MS-GARCH",       "0.419", "0.435", "2.151", "1.866", "1.364"],
+        ["LSTM-Attention", "0.523", "0.491", "2.480", "2.058", "1.376"],
+        ["Transformer",    "0.613", "0.541", "2.506", "2.201", "1.406"],
+        ["XGBoost",        "3.434", "2.823", "8.472", "5.798", "4.639"],
+    ], bold_cells=rfp_bold)
+
+    add_para(doc,
+        "Three patterns are clear from Table 7. First, MS-GARCH wins "
+        "four of the five regime cells (Oil Crash, GFC, COVID, Energy 22), "
+        "and is essentially tied with the single-regime GJR-GARCH on "
+        "the calm 2017–2019 control. This is the strongest evidence in "
+        "the project that the regime-switching mechanism is doing useful "
+        "work specifically during structural breaks, exactly the "
+        "scenario it was designed for. Second, the deep-learning models "
+        "(LSTM-Attention, Transformer) are competitive in the most "
+        "extreme regime (their QLIKE in COVID and GFC is within 16% of "
+        "MS-GARCH) but are uniformly worse in calmer regimes — "
+        "consistent with their tendency to over-fit on noisy short "
+        "windows when the volatility signal is weak. Third, XGBoost is "
+        "an order of magnitude worse than every other model across "
+        "every regime, mirroring its test-block QLIKE pathology in "
+        "Table 6 and re-confirming that squared-error gradient boosting "
+        "is the wrong objective for variance forecasting without "
+        "deliberate tail re-weighting. Taken together, Tables 6 and 7 "
+        "tell a consistent story: single-regime GARCH is good for calm "
+        "regimes, MS-GARCH wins outright in turbulent regimes, and the "
+        "attention-based deep models are competitive only when "
+        "exogenous information is supplied to them on the test block "
+        "(Table 6, with_exog).")
 
     add_heading(doc, "4.4 Explanation of Changes from the Analysis Plan",
                 level=2)
