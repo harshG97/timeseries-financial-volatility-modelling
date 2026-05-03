@@ -16,10 +16,10 @@ dependencies:
   - scipy
   - ipykernel
   - r-base
+  - rpy2
   - pip:
       - statsmodels
       - arch
-      - rpy2
       - yfinance
       - prophet
       - cmdstanpy
