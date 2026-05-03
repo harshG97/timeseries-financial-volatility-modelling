@@ -3,10 +3,12 @@ MS-GARCH Random Forecast Periods (RFP) evaluation.
 
 Evaluates the MSGARCH blueprints across historical shock regimes.
 For each window:
-1. Model is trained on all data up to fit_end.
-2. Forecasts the entire window sequentially using the exact same specification.
-   - For no_exog: passes the historical returns up to t-1 to forecast variance at t.
-   - For with_exog: ARX mean equation fitted on history; residuals passed to MSGARCH.
+1. ARX mean equation (with_exog only) and MSGARCH variance model are fitted
+   ONCE on data up to fit_end. No refit during the forecast period.
+2. The window is forecast sequentially: at step t, MSGARCH conditions on
+   observed residuals up to t-1 (computed using the fixed ARX params for
+   with_exog cells, or raw returns for no_exog) and produces a 1-step-ahead
+   variance forecast for t.
 """
 
 import argparse
@@ -83,8 +85,8 @@ def evaluate_window(
     ENDO_COLS = {"ret", "date", "ret_lag1", "ret_sq_lag1", "neg_ret_sq_lag1", "RV_5_lag1", "RV_10_lag1", "RV_22_lag1"}
     exog_cols = [c for c in train_df.columns if c not in ENDO_COLS] if use_exog else []
 
-    all_data = pd.concat([train_df, forecast_df])
-    returns = all_data["ret"] * 100
+    all_data = pd.concat([train_df, forecast_df], ignore_index=True)
+    returns = all_data["ret"] * 100  # pct returns; positional indexing only
     exog_data = all_data[exog_cols] if use_exog else None
 
     k = spec_params["k"]
@@ -97,52 +99,63 @@ def evaluate_window(
         switch_spec=robjects.ListVector({"do.mix": False})
     )
 
-    preds = []
     eval_start_idx = len(train_df)
     n_eval = len(forecast_df)
 
-    # Initial fit
+    # ---- ARX mean (fit ONCE on training data) ------------------------------
+    # For with_exog: y_t = Const + beta @ x_t + eps_t (lags=0).
+    # We then compute residuals for the whole concatenated series using the
+    # fixed fitted params — no refit per step.
     train_y = returns.iloc[:eval_start_idx]
     if use_exog:
         train_x = exog_data.iloc[:eval_start_idx]
-        arx_model = arch_model(train_y, x=train_x, mean="ARX", lags=0, vol="Constant").fit(disp="off")
-        resids = arx_model.resid.values
+        arx_model = arch_model(
+            train_y, x=train_x, mean="ARX", lags=0, vol="Constant"
+        ).fit(disp="off")
+        params = arx_model.params
+        missing = [c for c in exog_data.columns if c not in params.index]
+        if missing:
+            raise RuntimeError(
+                f"ARX fitted params missing exog columns {missing}; "
+                f"got params={list(params.index)}"
+            )
+        beta = params.loc[list(exog_data.columns)].values
+        const = float(params.get("Const", 0.0))
+        full_resids = returns.values - const - exog_data.values @ beta
     else:
-        resids = train_y.values
+        full_resids = returns.values
 
+    # ---- MSGARCH (fit ONCE on training residuals) --------------------------
     try:
-        current_fit = msgarch.FitML(spec=spec, data=robjects.FloatVector(resids))
+        current_fit = msgarch.FitML(
+            spec=spec, data=robjects.FloatVector(full_resids[:eval_start_idx])
+        )
     except Exception as e:
         raise RuntimeError("MSGARCH fit failed for window!") from e
 
-    # In RFP we DO NOT refit. We just forecast step by step adding observed residuals.
+    # ---- Sequential 1-step-ahead forecasts (no refit) ----------------------
+    preds = []
     for i in range(n_eval):
         current_t = eval_start_idx + i
-        
-        if use_exog:
-            y_hist = returns.iloc[:current_t]
-            x_hist = exog_data.iloc[:current_t]
-            curr_arx = arch_model(y_hist, x=x_hist, mean="ARX", lags=0, vol="Constant").fit(disp="off")
-            r_resids = robjects.FloatVector(curr_arx.resid.values)
-        else:
-            r_resids = robjects.FloatVector(returns.iloc[:current_t].values)
-
+        r_resids = robjects.FloatVector(full_resids[:current_t])
         fc = stats.predict(object=current_fit, newdata=r_resids, nahead=1)
-        vol_pred = fc.rx2("vol")[0]
+        vol_pred = float(fc.rx2("vol")[0])
         var_pred = vol_pred ** 2
 
+        actual_ret_pct = float(returns.iloc[current_t])
         preds.append({
-            "date": returns.index[current_t],
-            "ret": returns.iloc[current_t] / 100.0,
-            "realized_variance": (returns.iloc[current_t])**2,
-            "pred_variance": var_pred,
-            "pred_volatility": vol_pred,
+            "date": all_data["date"].iloc[current_t],
+            "ret_pct": actual_ret_pct,
+            "realized_var": actual_ret_pct ** 2,
+            "pred_var": var_pred,
+            "pred_vol": vol_pred,
+            "VaR_1": float(norm.ppf(0.01) * vol_pred),
+            "VaR_5": float(norm.ppf(0.05) * vol_pred),
         })
 
     df_preds = pd.DataFrame(preds)
-    df_preds["std_resid"] = df_preds["ret"] * 100.0 / df_preds["pred_volatility"]
-    df_preds["var_1"] = norm.ppf(0.01) * df_preds["pred_volatility"]
-    df_preds["var_5"] = norm.ppf(0.05) * df_preds["pred_volatility"]
+    df_preds["std_resid"] = df_preds["ret_pct"] / np.maximum(df_preds["pred_vol"], 1e-8)
+    df_preds["squared_std_resid"] = np.square(df_preds["std_resid"])
     return df_preds
 
 
@@ -243,27 +256,31 @@ def run(args: argparse.Namespace):
                 
             try:
                 preds = evaluate_window(w.train, w.forecast, spec, w.window_id)
-                met = metrics(preds["realized_variance"], preds["pred_variance"], preds["ret"] * 100)
-                
+                met = metrics(preds["realized_var"], preds["pred_var"], preds["ret_pct"])
+
                 # Save forecast
                 preds.to_csv(fc_dir / f"{t}_{f}_{e}_{w.window_id}.csv", index=False)
-                
+
                 res = {"target": t, "freq": f, "exog": e, "regime": w.regime, "window_id": w.window_id}
                 res.update({k: spec[k] for k in ["k", "model", "dist"]})
                 res.update(met)
-                res["n_fc"] = len(preds)
+                res["n_forecast"] = len(preds)
                 all_results.append(res)
-                
+
                 if not args.no_plots:
                     wd_plot = per_window_plot_dir / t / f / e
                     wd_plot.mkdir(parents=True, exist_ok=True)
-                    plt.figure(figsize=(10, 5))
-                    plt.plot(preds["date"], preds["pred_volatility"], label="Predicted Volatility", color="red")
-                    plt.plot(preds["date"], np.abs(preds["ret"] * 100), label="Observed Abs Return", alpha=0.5, color="grey")
+                    dates = pd.to_datetime(preds["date"])
+                    plt.figure(figsize=(10, 4))
+                    plt.plot(dates, np.sqrt(preds["realized_var"]),
+                             color="#1f77b4", linewidth=1.2, label="Observed vol")
+                    plt.plot(dates, preds["pred_vol"],
+                             color="#d62728", linewidth=1.2, label="Predicted vol")
                     plt.title(f"[{w.regime}] {t} {f} {e} - {w.window_id}")
-                    plt.legend()
+                    plt.xlabel("Date"); plt.ylabel("Volatility (%)")
+                    plt.legend(fontsize=9)
                     plt.tight_layout()
-                    plt.savefig(wd_plot / f"{w.window_id}.png")
+                    plt.savefig(wd_plot / f"{w.window_id}.png", dpi=150)
                     plt.close()
                     
             except Exception as exc:
@@ -275,14 +292,16 @@ def run(args: argparse.Namespace):
 
     res_df = pd.DataFrame(all_results)
     res_df.to_csv(OUT_DIR / "msgarch_rfp_results.csv", index=False)
-    
-    # Aggregation
-    summary = res_df.groupby(["target", "freq", "exog", "regime"]).agg(
-        qlike_mean=("qlike", "mean"),
-        qlike_median=("qlike", "median"),
-        rmse_mean=("rmse", "mean"),
-        n_windows=("window_id", "count")
-    ).reset_index()
+
+    # Canonical summary: mean/median per metric per (target, freq, exog, regime).
+    # Matches the schema produced by garch_rfp.py / transformer_rfp.py / lstm_rfp.py.
+    group_cols = ["target", "freq", "exog", "regime"]
+    metric_cols = ["mse", "rmse", "mae", "qlike",
+                   "var_1_hit_rate", "var_5_hit_rate"]
+    available = [c for c in metric_cols if c in res_df.columns]
+    summary = res_df.groupby(group_cols)[available].agg(["mean", "median"])
+    summary.columns = ["_".join(c) for c in summary.columns]
+    summary = summary.reset_index()
     summary.to_csv(OUT_DIR / "msgarch_rfp_summary.csv", index=False)
     
     print("\nResults saved to MSGARCH-model/outputs/rfp/")

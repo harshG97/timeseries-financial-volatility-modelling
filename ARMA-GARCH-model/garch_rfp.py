@@ -4,8 +4,14 @@ GJR-GARCH / GARCH-X RFP (Random Forecast Periods) evaluation.
 Reads best (p,o,q) from ``garch_grid_search_results.csv``, then evaluates
 each blueprint on every RFP window using ``src/rfp_generator.py``.
 
-For each window: fit on all data up to ``fit_end`` (no refit within window),
-then predict every day/week in the forecast period.
+For each window the model is fit ONCE on all data up to ``fit_end``. The
+forecast period is then evaluated by re-instantiating the same model spec
+on the concatenated train+forecast series, plugging the fitted parameters
+in via ``.fix(...)`` (no re-estimation), and reading off the resulting
+conditional volatility for the forecast indices. This produces 1-step-ahead
+variance forecasts under fixed training-fit parameters — analogous to how
+the LSTM/Transformer scripts use fixed weights but condition each step on
+observed history.
 
 Outputs
 -------
@@ -89,69 +95,69 @@ def metrics(y_true: np.ndarray, pred_var: np.ndarray,
 
 def evaluate_window(window, p: int, o: int, q: int,
                     use_exog: bool) -> tuple[dict, pd.DataFrame]:
-    """Train GARCH on one RFP window, predict forecast period."""
+    """Fit GARCH once on the window's training data, then read 1-step-ahead
+    variance forecasts for the forecast period using fixed (training-fit)
+    parameters — no refit during the forecast period.
+    """
     train_df = window.train
     forecast_df = window.forecast
 
-    returns = train_df["ret"] * 100
-    exog_df = train_df[exog_columns(train_df)] if use_exog else None
+    train_returns = train_df["ret"] * 100
+    train_exog = train_df[exog_columns(train_df)] if use_exog else None
+    has_exog = (
+        use_exog and train_exog is not None and len(train_exog.columns) > 0
+    )
 
-    # Fit on training data
+    def build_model(returns_series: pd.Series, exog_df: pd.DataFrame | None):
+        if has_exog:
+            return arch_model(
+                returns_series, x=exog_df, mean="ARX", lags=0,
+                p=p, o=o, q=q, vol="Garch", dist="ged",
+            )
+        return arch_model(
+            returns_series, mean="Constant",
+            p=p, o=o, q=q, vol="Garch", dist="ged",
+        )
+
+    # ---- Fit once on training data --------------------------------------
     try:
-        if use_exog and exog_df is not None and len(exog_df.columns) > 0:
-            model = arch_model(
-                returns, x=exog_df, mean="ARX", lags=0,
-                p=p, o=o, q=q, vol="Garch", dist="ged",
-            )
-        else:
-            model = arch_model(
-                returns, mean="Constant",
-                p=p, o=o, q=q, vol="Garch", dist="ged",
-            )
-        res = model.fit(disp="off")
-    except Exception as e:
-        # fallback: unconditional variance
+        train_model = build_model(train_returns, train_exog)
+        res = train_model.fit(disp="off")
+    except Exception:
         res = None
 
-    # Predict each day in forecast window
+    # ---- Apply fixed params to full series, read conditional vol --------
+    n_train = len(train_returns)
+    n_forecast = len(forecast_df)
+    fallback_var = float(np.var(train_returns)) if len(train_returns) else 1.0
+    pred_var_path = np.full(n_forecast, fallback_var)
+
+    if res is not None:
+        try:
+            full_returns = pd.concat(
+                [train_returns, forecast_df["ret"] * 100], ignore_index=True
+            )
+            if has_exog:
+                full_exog = pd.concat(
+                    [train_exog, forecast_df[exog_columns(forecast_df)]],
+                    ignore_index=True,
+                )[train_exog.columns.tolist()]
+            else:
+                full_exog = None
+            full_model = build_model(full_returns, full_exog)
+            fixed = full_model.fix(res.params)
+            sigma_path = np.asarray(fixed.conditional_volatility)
+            pred_var_path = np.maximum(sigma_path[n_train:] ** 2, 1e-8)
+        except Exception:
+            pass  # keep fallback
+
+    # ---- Assemble forecast frame ----------------------------------------
     rows = []
-    combined = train_df.copy()
-
-    for step in range(len(forecast_df)):
-        if res is not None:
-            try:
-                ret_hist = combined["ret"] * 100
-                exog_hist = combined[exog_columns(combined)] if use_exog else None
-
-                if use_exog and exog_hist is not None:
-                    m = arch_model(
-                        ret_hist, x=exog_hist, mean="ARX", lags=0,
-                        p=p, o=o, q=q, vol="Garch", dist="ged",
-                    )
-                else:
-                    m = arch_model(
-                        ret_hist, mean="Constant",
-                        p=p, o=o, q=q, vol="Garch", dist="ged",
-                    )
-                r = m.fit(disp="off", starting_values=res.params.values)
-
-                if use_exog:
-                    next_row = forecast_df.iloc[[step]]
-                    x_out = next_row[exog_columns(next_row)].values.reshape(1, -1)
-                    fc = r.forecast(horizon=1, x=x_out, reindex=False)
-                else:
-                    fc = r.forecast(horizon=1, reindex=False)
-                pred_var = float(fc.variance.iloc[-1, 0])
-                res = r  # update for warm start
-            except Exception:
-                pred_var = float(np.var(combined["ret"] * 100))
-        else:
-            pred_var = float(np.var(combined["ret"] * 100))
-
-        pred_var = max(pred_var, 1e-8)
+    for step in range(n_forecast):
+        pred_var = float(pred_var_path[step])
+        sigma = float(np.sqrt(pred_var))
         actual_ret_pct = float(forecast_df.iloc[step]["ret"]) * 100.0
         actual_rv = actual_ret_pct ** 2
-        sigma = np.sqrt(pred_var)
 
         rows.append({
             "date": forecast_df.iloc[step]["date"],
@@ -162,8 +168,6 @@ def evaluate_window(window, p: int, o: int, q: int,
             "VaR_1": float(NormalDist().inv_cdf(0.01) * sigma),
             "VaR_5": float(NormalDist().inv_cdf(0.05) * sigma),
         })
-
-        combined = pd.concat([combined, forecast_df.iloc[[step]]], ignore_index=True)
 
     fc_frame = pd.DataFrame(rows)
     fc_frame["std_resid"] = fc_frame["ret_pct"] / np.maximum(fc_frame["pred_vol"], 1e-8)

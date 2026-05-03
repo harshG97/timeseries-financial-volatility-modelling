@@ -325,7 +325,7 @@ def plot_boxplot_regime(results_df: pd.DataFrame) -> None:
 
 def run(args: argparse.Namespace) -> None:
     set_seed(args.seed)
-    device = get_device(args.cpu, not args.cpu)
+    device = get_device(args.cpu, args.mps)
     print(f"Using device: {device}")
 
     val_csv = Path(args.validation_csv)
@@ -457,6 +457,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--cpu", action="store_true",
                    help="Force CPU even if CUDA is available.")
+    p.add_argument("--mps", action="store_true",
+                   help="Allow Apple MPS when CUDA is unavailable. Off by "
+                        "default — MPS is typically slower than CPU for this "
+                        "workload (see transformer_volatility.get_device).")
     p.add_argument("--no-plots", action="store_true",
                    help="Skip plot generation.")
     p.add_argument("--show-epoch-progress", action="store_true",

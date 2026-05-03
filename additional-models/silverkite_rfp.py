@@ -17,6 +17,8 @@ additional-models/outputs/silverkite/rfp/
 from __future__ import annotations
 
 import argparse
+import os
+import random
 import sys
 from dataclasses import asdict
 from pathlib import Path
@@ -24,6 +26,19 @@ import warnings
 
 import numpy as np
 import pandas as pd
+
+
+def set_seed(seed: int) -> None:
+    """Seed Python and NumPy RNGs for reproducibility.
+
+    Note: Greykite's SimpleSilverkiteEstimator does not expose a seed
+    argument and uses internal randomness for components like changepoint
+    detection. Full bit-identical reproducibility is not guaranteed; this
+    pins everything we control.
+    """
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    random.seed(seed)
+    np.random.seed(seed)
 import matplotlib
 
 matplotlib.use("Agg")
@@ -308,6 +323,7 @@ def plot_boxplot_regime(results_df: pd.DataFrame) -> None:
 # ---------------------------------------------------------------------------
 
 def run(args: argparse.Namespace) -> None:
+    set_seed(args.seed)
     val_csv = Path(args.validation_csv)
     if not val_csv.is_absolute():
         val_csv = OUT_DIR / val_csv
@@ -432,6 +448,9 @@ def build_parser() -> argparse.ArgumentParser:
         default="silverkite_validation_results.csv",
         help="Path to validation results CSV (default: outputs/silverkite/silverkite_validation_results.csv)",
     )
+    p.add_argument("--seed", type=int, default=42,
+                   help="Seed for Python/NumPy RNGs (Greykite internals are "
+                        "not bit-reproducible).")
     p.add_argument("--no-plots", action="store_true",
                    help="Skip plot generation.")
     return p
