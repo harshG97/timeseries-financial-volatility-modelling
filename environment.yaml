@@ -17,8 +17,6 @@ dependencies:
   - ipykernel
   - r-base
   - rpy2
-  - gcc_linux-64
-  - gxx_linux-64
   - setuptools
   - pmdarima<=1.8.5
   - pip:
