@@ -17,7 +17,6 @@ dependencies:
   - ipykernel
   - r-base
   - rpy2
-  - r-msgarch
   - gcc_linux-64
   - gxx_linux-64
   - setuptools
