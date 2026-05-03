@@ -43,10 +43,23 @@ class XGBConfig:
     n_estimators: int = 100
     subsample: float = 0.8
     colsample_bytree: float = 0.8
+    min_child_weight: float = 1.0
+    reg_lambda: float = 1.0
 
 
 def set_seed(seed: int) -> None:
     np.random.seed(seed)
+
+
+def parse_selection(raw: str, allowed: list[str]) -> list[str]:
+    """Parse a comma-separated selection or 'all' against an allowed list."""
+    if raw.lower() == "all":
+        return list(allowed)
+    selected = [x.strip() for x in raw.split(",") if x.strip()]
+    bad = sorted(set(selected) - set(allowed))
+    if bad:
+        raise ValueError(f"Invalid values {bad}; allowed values are {allowed}")
+    return selected
 
 def load_cell(freq: str, exog: str, target: str) -> dict[str, pd.DataFrame]:
     base = SPLIT_DIR / freq / exog / target
@@ -74,22 +87,39 @@ def make_dataset(df: pd.DataFrame, columns: list[str]) -> tuple[np.ndarray, np.n
     return x, y, dates, returns_pct
 
 def train_model(train_x: np.ndarray, train_y: np.ndarray, config: XGBConfig, seed: int) -> xgb.XGBRegressor:
+    """Fit XGBoost on the LOG of realized variance.
+
+    Realized variance is strictly positive but reg:squarederror is unbounded,
+    so on raw variance the model can output negative or near-zero predictions
+    that blow up QLIKE = mean(log(pred) + RV/pred) for any single bad day.
+    Fitting log(RV) instead guarantees strictly-positive predictions after the
+    exponential in `predict`, and keeps the symmetric squared loss aligned
+    with QLIKE's log-space structure.
+    """
     model = xgb.XGBRegressor(
         max_depth=config.max_depth,
         learning_rate=config.learning_rate,
         n_estimators=config.n_estimators,
         subsample=config.subsample,
         colsample_bytree=config.colsample_bytree,
+        min_child_weight=config.min_child_weight,
+        reg_lambda=config.reg_lambda,
         objective="reg:squarederror",
         random_state=seed,
         n_jobs=-1
     )
-    model.fit(train_x, train_y)
+    log_y = np.log(np.maximum(train_y, 1e-12).astype(np.float32))
+    model.fit(train_x, log_y)
     return model
 
 def predict(model: xgb.XGBRegressor, x: np.ndarray) -> np.ndarray:
-    pred = model.predict(x)
-    return np.maximum(pred, 1e-8)
+    """Exponentiate the log-variance prediction back to variance scale.
+
+    The 1e-8 floor is a paranoia guard — np.exp(...) cannot produce
+    non-positive values, but underflow could in principle round to 0.
+    """
+    log_pred = model.predict(x)
+    return np.maximum(np.exp(log_pred), 1e-8).astype(np.float32)
 
 def metrics(y_true: np.ndarray, pred_var: np.ndarray, returns_pct: np.ndarray) -> dict[str, float]:
     pred_var = np.maximum(pred_var, 1e-8)
@@ -160,16 +190,41 @@ def expanding_test_forecast(frames: dict[str, pd.DataFrame], columns: list[str],
         })
         history = pd.concat([history, test.iloc[[step]]], ignore_index=True)
 
-    return pd.DataFrame(rows)
+    fc_frame = pd.DataFrame(rows)
+    fc_frame["std_resid"] = fc_frame["ret_pct"] / np.maximum(fc_frame["pred_vol"], 1e-8)
+    fc_frame["squared_std_resid"] = np.square(fc_frame["std_resid"])
+    return fc_frame
 
 def default_grid() -> list[XGBConfig]:
-    depths = [2, 3, 5]
-    lrs = [0.01, 0.05, 0.1]
-    ests = [50, 100, 200]
-    
+    """Cartesian search over 7 axes (648 configs).
+
+    Tuned for daily realized variance: drops the underfit corners
+    (depth=2, lr=0.01) and adds regularization knobs that matter for
+    noisy positive-skewed targets — min_child_weight to prevent leaves
+    forming around outlier days, reg_lambda for L2 on leaf weights, and
+    proper sweeps over subsample / colsample_bytree (previously fixed).
+    """
+    depths = [2, 3, 5,]
+    lrs = [0.005, 0.01, 0.03, 0.05, 0.1]
+    ests = [50, 100, 150, 200, 300]
+    mcws = [1, 5, 20]
+    lambdas = [1, 10]
+    subs = [0.6, 0.8, 1.0]
+    cols = [0.6, 0.8,]
+
     grid = []
-    for d, lr, n in itertools.product(depths, lrs, ests):
-        grid.append(XGBConfig(max_depth=d, learning_rate=lr, n_estimators=n))
+    for d, lr, n, mcw, lam, sub, col in itertools.product(
+        depths, lrs, ests, mcws, lambdas, subs, cols
+    ):
+        grid.append(XGBConfig(
+            max_depth=d,
+            learning_rate=lr,
+            n_estimators=n,
+            subsample=sub,
+            colsample_bytree=col,
+            min_child_weight=mcw,
+            reg_lambda=lam,
+        ))
     return grid
 
 def run(args: argparse.Namespace) -> None:
@@ -177,9 +232,9 @@ def run(args: argparse.Namespace) -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     (OUT_DIR / "forecasts").mkdir(parents=True, exist_ok=True)
 
-    targets = TARGETS
-    freqs = FREQS
-    exogs = EXOGS
+    targets = parse_selection(args.targets, TARGETS)
+    freqs = parse_selection(args.freqs, FREQS)
+    exogs = parse_selection(args.exogs, EXOGS)
     grid = default_grid()
 
     selection_rows = []
@@ -224,5 +279,11 @@ def run(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--targets", default="all",
+                        help="Comma list or 'all': SPY,OIL,GOLD (default: all)")
+    parser.add_argument("--freqs", default="all",
+                        help="Comma list or 'all': daily,weekly (default: all)")
+    parser.add_argument("--exogs", default="all",
+                        help="Comma list or 'all': no_exog,with_exog (default: all)")
     parser.add_argument("--seed", type=int, default=42)
     run(parser.parse_args())

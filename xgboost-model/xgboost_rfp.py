@@ -56,6 +56,18 @@ RFP_OUT = OUT_DIR / "rfp"
 TARGETS = ["SPY", "OIL", "GOLD"]
 FREQS = ["daily", "weekly"]
 EXOGS = ["no_exog", "with_exog"]
+REGIMES = ["GFC", "OIL_CRASH", "COVID", "ENERGY_22", "CALM_17_19"]
+
+
+def parse_selection(raw: str, allowed: list[str]) -> list[str]:
+    """Parse a comma-separated selection or 'all' against an allowed list."""
+    if raw.lower() == "all":
+        return list(allowed)
+    selected = [x.strip() for x in raw.split(",") if x.strip()]
+    bad = sorted(set(selected) - set(allowed))
+    if bad:
+        raise ValueError(f"Invalid values {bad}; allowed values are {allowed}")
+    return selected
 
 def evaluate_window(window, config: XGBConfig, use_exog: bool, seed: int) -> tuple[dict, pd.DataFrame]:
     train_df = window.train
@@ -100,6 +112,8 @@ def evaluate_window(window, config: XGBConfig, use_exog: bool, seed: int) -> tup
         })
 
     fc_frame = pd.DataFrame(rows)
+    fc_frame["std_resid"] = fc_frame["ret_pct"] / np.maximum(fc_frame["pred_vol"], 1e-8)
+    fc_frame["squared_std_resid"] = np.square(fc_frame["std_resid"])
     m = metrics(test_y, pred_var_path, test_ret)
     
     m.update({
@@ -125,10 +139,18 @@ def run(args: argparse.Namespace) -> None:
     val_df = pd.read_csv(val_path)
     gen = RFPGenerator()
 
+    targets = parse_selection(args.targets, TARGETS)
+    freqs = parse_selection(args.freqs, FREQS)
+    exogs = parse_selection(args.exogs, EXOGS)
+    regime_filter = (
+        parse_selection(args.regimes, REGIMES)
+        if args.regimes.lower() != "all" else None
+    )
+
     (RFP_OUT / "forecasts").mkdir(parents=True, exist_ok=True)
     all_results = []
-    
-    cells = [(t, f, e) for t in TARGETS for f in FREQS for e in EXOGS]
+
+    cells = [(t, f, e) for t in targets for f in freqs for e in exogs]
 
     for target, freq, exog in tqdm(cells, desc="RFP cells"):
         match = val_df[(val_df["target"] == target) & (val_df["freq"] == freq) & (val_df["exog"] == exog)]
@@ -143,7 +165,10 @@ def run(args: argparse.Namespace) -> None:
         )
         use_exog = (exog == "with_exog")
 
-        windows = list(gen.iter_windows(freq=freq, target=target, use_exog=use_exog))
+        windows = list(gen.iter_windows(
+            freq=freq, target=target, use_exog=use_exog,
+            regimes=regime_filter,
+        ))
 
         for w in tqdm(windows, desc=f"  windows {target}/{freq}/{exog}", leave=False):
             m, fc_frame = evaluate_window(w, config, use_exog, args.seed)
@@ -159,12 +184,29 @@ def run(args: argparse.Namespace) -> None:
     results_df = pd.DataFrame(all_results)
     results_df.to_csv(RFP_OUT / "xgboost_rfp_results.csv", index=False)
 
-    summary = results_df.groupby(["target", "freq", "exog", "regime"])[["mse", "rmse", "mae", "qlike", "var_1_hit_rate"]].mean().reset_index()
+    # Canonical summary schema (matches garch_rfp / transformer_rfp / lstm_rfp):
+    # mean and median per metric per (target, freq, exog, regime).
+    group_cols = ["target", "freq", "exog", "regime"]
+    metric_cols = ["mse", "rmse", "mae", "qlike",
+                   "var_1_hit_rate", "var_5_hit_rate"]
+    available = [c for c in metric_cols if c in results_df.columns]
+    summary = results_df.groupby(group_cols)[available].agg(["mean", "median"])
+    summary.columns = ["_".join(c) for c in summary.columns]
+    summary = summary.reset_index()
     summary.to_csv(RFP_OUT / "xgboost_rfp_summary.csv", index=False)
     
     print(f"Done. Saved to {RFP_OUT.relative_to(ROOT)}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--targets", default="all",
+                        help="Comma list or 'all': SPY,OIL,GOLD (default: all)")
+    parser.add_argument("--freqs", default="all",
+                        help="Comma list or 'all': daily,weekly (default: all)")
+    parser.add_argument("--exogs", default="all",
+                        help="Comma list or 'all': no_exog,with_exog (default: all)")
+    parser.add_argument("--regimes", default="all",
+                        help="Comma list or 'all': "
+                             "GFC,OIL_CRASH,COVID,ENERGY_22,CALM_17_19 (default: all)")
     parser.add_argument("--seed", type=int, default=42)
     run(parser.parse_args())
