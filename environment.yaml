@@ -4,7 +4,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.11
+  - python=3.10
   - numpy
   - pandas
   - matplotlib
@@ -15,8 +15,16 @@ dependencies:
   - seaborn
   - scipy
   - ipykernel
+  - r-base
+  - rpy2
+  - setuptools
+  - pmdarima<=1.8.5
   - pip:
       - statsmodels
       - arch
-      - rpy2
       - yfinance
+      - holidays==0.24
+      - prophet<=1.1.5
+      - cmdstanpy
+      - greykite
+      - orbit-ml
