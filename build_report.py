@@ -1102,6 +1102,28 @@ def build():
         "(§4.1.1–4.1.2) and is consistent with the excess kurtosis of "
         "11.5 reported in Table 2.")
 
+    add_para(doc)
+    add_image(doc,
+              ROOT / "eda_outputs" / "appendix"
+                   / "A5_regime_boxplot_with_exog.png",
+              width_in=6.2)
+    add_caption(doc,
+        "Appendix Figure 5. Distribution of per-window QLIKE across the "
+        "five RFP windows in each historical regime, by model — with_exog "
+        "configuration (SPY daily, log y-axis). Direct counterpart to "
+        "Appendix Figure 2; presented separately so the no_exog vs "
+        "with_exog comparison can be made by side-by-side reading. The "
+        "qualitative picture is unchanged — XGBoost still sits an order "
+        "of magnitude above the other four models in every regime, the "
+        "GJR-family models retain the tightest boxes in calm regimes, and "
+        "GFC/COVID remain the highest-spread regimes — but two "
+        "differences are worth noting: (i) the LSTM-Attention COVID box "
+        "shifts down relative to the no_exog version, consistent with "
+        "the with_exog LSTM win on test-block QLIKE in Table 6; "
+        "(ii) the Transformer box in OIL_CRASH widens, reflecting the "
+        "instability of self-attention on small training windows when "
+        "the feature dimension grows.")
+
     doc.save(OUT)
     print(f"Saved: {OUT}")
 

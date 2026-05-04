@@ -83,10 +83,10 @@ def fig_A1_residual_montage() -> Path:
 
 
 # ---------------------------------------------------------------------------
-# A2. Per-regime QLIKE boxplot
+# A2 / A5. Per-regime QLIKE boxplot (one variant per exog setting)
 # ---------------------------------------------------------------------------
 
-def fig_A2_regime_boxplot() -> Path:
+def _regime_boxplot(exog_value: str, fig_number: int, out_name: str) -> Path:
     rfp_files = {
         "GJR-GARCH":      ROOT / "ARMA-GARCH-model/outputs/rfp/garch_rfp_results.csv",
         "MS-GARCH":       ROOT / "MSGARCH-model/outputs/rfp/msgarch_rfp_results.csv",
@@ -97,7 +97,7 @@ def fig_A2_regime_boxplot() -> Path:
     rows = []
     for name, p in rfp_files.items():
         df = pd.read_csv(p)
-        df = df[(df["target"] == "SPY") & (df["freq"] == "daily") & (df["exog"] == EXOG)]
+        df = df[(df["target"] == "SPY") & (df["freq"] == "daily") & (df["exog"] == exog_value)]
         for _, r in df.iterrows():
             rows.append({"model": name, "regime": r["regime"], "qlike": r["qlike"]})
     long_df = pd.DataFrame(rows)
@@ -113,18 +113,18 @@ def fig_A2_regime_boxplot() -> Path:
             long_df[(long_df["model"] == m) & (long_df["regime"] == r)]["qlike"].values
             for r in regime_order
         ]
-        bp = ax.boxplot(data_per_regime,
-                        positions=positions + (i - 2) * width,
-                        widths=width * 0.9,
-                        patch_artist=True,
-                        boxprops=dict(facecolor=palette[i], alpha=0.65,
-                                       edgecolor="black", linewidth=0.7),
-                        medianprops=dict(color="black", linewidth=1.0),
-                        whiskerprops=dict(color="0.3", linewidth=0.7),
-                        capprops=dict(color="0.3", linewidth=0.7),
-                        flierprops=dict(marker="o", markersize=3,
-                                         markerfacecolor=palette[i],
-                                         markeredgecolor="0.3"))
+        ax.boxplot(data_per_regime,
+                   positions=positions + (i - 2) * width,
+                   widths=width * 0.9,
+                   patch_artist=True,
+                   boxprops=dict(facecolor=palette[i], alpha=0.65,
+                                  edgecolor="black", linewidth=0.7),
+                   medianprops=dict(color="black", linewidth=1.0),
+                   whiskerprops=dict(color="0.3", linewidth=0.7),
+                   capprops=dict(color="0.3", linewidth=0.7),
+                   flierprops=dict(marker="o", markersize=3,
+                                    markerfacecolor=palette[i],
+                                    markeredgecolor="0.3"))
     ax.set_yscale("log")
     ax.set_xticks(positions)
     ax.set_xticklabels(["Calm 17-19", "Oil Crash", "Energy 22", "GFC", "COVID"])
@@ -133,16 +133,24 @@ def fig_A2_regime_boxplot() -> Path:
                for i in range(len(model_order))]
     ax.legend(handles, model_order, ncol=5, loc="upper left",
               fontsize=9, frameon=False)
-    ax.set_title("Appendix Figure 2 — Distribution of per-window QLIKE by "
-                 "regime and model (SPY daily, no_exog)",
+    ax.set_title(f"Appendix Figure {fig_number} — Distribution of per-window "
+                 f"QLIKE by regime and model (SPY daily, {exog_value})",
                  fontsize=11, fontweight="bold")
     ax.grid(axis="y", linestyle=":", alpha=0.5)
     fig.tight_layout()
-    out = OUT_DIR / "A2_regime_boxplot.png"
+    out = OUT_DIR / out_name
     fig.savefig(out, dpi=150)
     plt.close(fig)
     print(f"saved {out.relative_to(ROOT)}")
     return out
+
+
+def fig_A2_regime_boxplot() -> Path:
+    return _regime_boxplot("no_exog", 2, "A2_regime_boxplot.png")
+
+
+def fig_A5_regime_boxplot_with_exog() -> Path:
+    return _regime_boxplot("with_exog", 5, "A5_regime_boxplot_with_exog.png")
 
 
 # ---------------------------------------------------------------------------
@@ -250,3 +258,4 @@ if __name__ == "__main__":
     fig_A2_regime_boxplot()
     fig_A3_covid_overlay()
     fig_A4_returns_distribution()
+    fig_A5_regime_boxplot_with_exog()
