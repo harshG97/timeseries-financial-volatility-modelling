@@ -1030,6 +1030,78 @@ def build():
         "the 80% threshold, state so here. See the example evaluation "
         "linked in the assignment for formatting.]")
 
+    # ---------- 9. Appendix C: Supplementary Figures ----------
+    add_heading(doc, "9. Appendix C: Supplementary Figures")
+    add_para(doc,
+        "Figures in this appendix are numbered independently of the main "
+        "report (Appendix Figure 1, 2, 3, 4) and provide a wider visual "
+        "perspective on residual adequacy, regime-level forecast "
+        "variability, qualitative cross-model behaviour during a crisis "
+        "window, and the empirical justification for the heavy-tailed "
+        "innovation distribution used by the GARCH-family models.")
+
+    add_para(doc)
+    add_image(doc,
+              ROOT / "eda_outputs" / "appendix" / "A1_residual_montage.png",
+              width_in=6.2)
+    add_caption(doc,
+        "Appendix Figure 1. Cross-model residual diagnostics on the SPY "
+        "daily test block (no_exog). Left column: ACF of standardised "
+        "residuals zₜ = rₜ/σ̂ₜ; right column: ACF of zₜ². Adequate variance "
+        "specifications produce both ACFs that fall inside the 95% Bartlett "
+        "band at every lag. The four GARCH-family and recurrent / "
+        "attention models show essentially clean whitening; XGBoost (bottom "
+        "row) shows visible mass outside the band on both ACFs, reinforcing "
+        "the QLIKE / VaR-exception evidence in §4.3 that this model has not "
+        "absorbed the conditional heteroskedasticity.")
+
+    add_para(doc)
+    add_image(doc,
+              ROOT / "eda_outputs" / "appendix" / "A2_regime_boxplot.png",
+              width_in=6.2)
+    add_caption(doc,
+        "Appendix Figure 2. Distribution of per-window QLIKE across the "
+        "five RFP windows in each historical regime, by model (SPY daily, "
+        "no_exog, log y-axis). Table 7 in the main body reported only the "
+        "regime mean; this view shows that within-regime spread is small in "
+        "Calm 17–19, Oil Crash, and Energy 22 (boxes are tight) but large "
+        "in GFC and COVID, where a single bad window can shift a regime "
+        "mean noticeably. The XGBoost boxes sit an order of magnitude above "
+        "the other four models in every regime, which is why the test-block "
+        "QLIKE in Table 6 is also dominated by it.")
+
+    add_para(doc)
+    add_image(doc,
+              ROOT / "eda_outputs" / "appendix" / "A3_covid_overlay.png",
+              width_in=6.2)
+    add_caption(doc,
+        "Appendix Figure 3. Cross-model volatility forecasts on a "
+        "representative COVID RFP window (d_COVID_3, 60 days from late "
+        "2020). The grey line is the observed |return|; coloured lines are "
+        "the five model forecasts σ̂ₜ on the same dates. GJR-GARCH and "
+        "MS-GARCH track the volatility burst most closely; the LSTM-with-"
+        "attention is smoother and slightly under-shoots peaks; the "
+        "Transformer is noisier; XGBoost forecasts are visibly compressed "
+        "toward the centre, which is the visual signature of the variance "
+        "under-prediction that drives its inflated VaR exception count in "
+        "Table 6.")
+
+    add_para(doc)
+    add_image(doc,
+              ROOT / "eda_outputs" / "appendix" / "A4_returns_distribution.png",
+              width_in=6.2)
+    add_caption(doc,
+        "Appendix Figure 4. Empirical SPY daily log-return distribution "
+        "(2000–2026) overlaid with maximum-likelihood Normal and Student-t "
+        "fits. Left panel: linear y-axis showing the central peak; right "
+        "panel: log y-axis isolating the tails. The Normal fit visibly "
+        "under-states the central peak and the tail mass; the fitted "
+        "Student-t (df ≈ 2.7) tracks both the peak and the tail decay "
+        "closely. This is the empirical justification for the Student-t "
+        "innovation distribution used by GJR-GARCH and MS-GARCH "
+        "(§4.1.1–4.1.2) and is consistent with the excess kurtosis of "
+        "11.5 reported in Table 2.")
+
     doc.save(OUT)
     print(f"Saved: {OUT}")
 
